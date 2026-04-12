@@ -3,32 +3,100 @@
 use binance::api::*;
 use binance::userstream::*;
 use binance::websockets::*;
+use tokio::time;
+use tokio::sync::mpsc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 
-fn main() {
-    //user_stream();
-    //user_stream_websocket();
-    //market_websocket();
-    //kline_websocket();
-    //all_trades_websocket();
-    //last_price_for_one_symbol();
-    // multiple_streams();
+// Note: This example demonstrates the traditional WebSockets API.
+// For a more modern, channel-based API, see the `Stream` struct in the websockets module
+// and examples/binance_websockets_modern.rs
+
+#[tokio::main]
+async fn main() {
+    // Create an unbounded channel so the websocket callback can send events to the main thread
+    let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+
+    // Shared running flag for both websocket task and main receiver loop
+    let running = Arc::new(AtomicBool::new(true));
+    let running_ws = running.clone();
+
+    // Build the websocket with a callback that forwards events to the main thread via the channel
+    let mut ws = WebSockets::new(move |event| {
+        // Convert the event to a string and send it to the main thread; ignore send errors
+        let text = format!("{:#?}", event);
+        let _ = tx.send(text);
+        Ok(())
+    });
+
+    // Spawn a task to run the websocket (connect + event loop)
+    tokio::spawn(async move {
+        if let Err(e) = ws.connect("btcusdt@aggTrade").await {
+            eprintln!("WebSocket connect error: {}", e);
+            running_ws.store(false, Ordering::Relaxed);
+            return;
+        }
+        if let Err(e) = ws.event_loop(&running_ws).await {
+            eprintln!("WebSocket event loop error: {}", e);
+        }
+        // Attempt clean disconnect
+        let _ = ws.disconnect();
+    });
+
+    // Stop after 10 seconds for this quick test (you can change duration as needed)
+    let running_timeout = running.clone();
+    tokio::spawn(async move {
+        time::sleep(Duration::from_secs(10)).await;
+        running_timeout.store(false, Ordering::Relaxed);
+    });
+
+    // Main thread: receive and print events sent from the websocket callback
+    loop {
+        tokio::select! {
+            // Receive next event sent by the websocket callback
+            maybe = rx.recv() => {
+                match maybe {
+                    Some(msg) => println!("MAIN RECEIVED: {}", msg),
+                    None => {
+                        eprintln!("Channel closed by sender");
+                        break;
+                    }
+                }
+            }
+
+            // Periodically check if we should stop
+            _ = time::sleep(Duration::from_millis(200)) => {
+                if !running.load(Ordering::Relaxed) {
+                    // Drain any remaining messages quickly
+                    while let Ok(Some(msg)) =
+                        tokio::time::timeout(Duration::from_millis(50), rx.recv()).await
+                    {
+                        println!("MAIN RECEIVED (drain): {}", msg);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    eprintln!("✅ Test complete");
 }
 
-fn user_stream() {
+async fn user_stream() {
     let api_key_user = Some("YOUR_API_KEY".into());
     let user_stream: UserStream = Binance::new(api_key_user, None);
 
-    if let Ok(answer) = user_stream.start() {
+    if let Ok(answer) = user_stream.start().await {
         println!("Data Stream Started ...");
         let listen_key = answer.listen_key;
 
-        match user_stream.keep_alive(&listen_key) {
+        match user_stream.keep_alive(&listen_key).await {
             Ok(msg) => println!("Keepalive user data stream: {:?}", msg),
             Err(e) => println!("Error: {}", e),
         }
 
-        match user_stream.close(&listen_key) {
+        match user_stream.close(&listen_key).await {
             Ok(msg) => println!("Close user data stream: {:?}", msg),
             Err(e) => println!("Error: {}", e),
         }
@@ -37,12 +105,12 @@ fn user_stream() {
     }
 }
 
-fn user_stream_websocket() {
+async fn user_stream_websocket() {
     let keep_running = AtomicBool::new(true); // Used to control the event loop
     let api_key_user = Some("YOUR_KEY".into());
     let user_stream: UserStream = Binance::new(api_key_user, None);
 
-    if let Ok(answer) = user_stream.start() {
+    if let Ok(answer) = user_stream.start().await {
         let listen_key = answer.listen_key;
 
         let mut web_socket: WebSockets<'_> = WebSockets::new(|event: WebsocketEvent| {
@@ -70,11 +138,11 @@ fn user_stream_websocket() {
             Ok(())
         });
 
-        web_socket.connect(&listen_key).unwrap(); // check error
-        if let Err(e) = web_socket.event_loop(&keep_running) {
+        web_socket.connect(&listen_key).await.unwrap(); // check error
+        if let Err(e) = web_socket.event_loop(&keep_running).await {
             println!("Error: {}", e);
         }
-        user_stream.close(&listen_key).unwrap();
+        user_stream.close(&listen_key).await.unwrap();
         web_socket.disconnect().unwrap();
         println!("Userstrem closed and disconnected");
     } else {
@@ -82,44 +150,58 @@ fn user_stream_websocket() {
     }
 }
 
-fn market_websocket() {
-    let keep_running = AtomicBool::new(true); // Used to control the event loop
-    let agg_trade = String::from("ethbtc@aggTrade");
-    let mut web_socket: WebSockets<'_> = WebSockets::new(|event: WebsocketEvent| {
-        match event {
-            WebsocketEvent::Trade(trade) => {
-                println!(
-                    "Symbol: {}, price: {}, qty: {}",
-                    trade.symbol, trade.price, trade.qty
-                );
-            }
-            WebsocketEvent::DepthOrderBook(depth_order_book) => {
-                println!(
-                    "Symbol: {}, Bids: {:?}, Ask: {:?}",
-                    depth_order_book.symbol, depth_order_book.bids, depth_order_book.asks
-                );
-            }
-            WebsocketEvent::OrderBook(order_book) => {
-                println!(
-                    "last_update_id: {}, Bids: {:?}, Ask: {:?}",
-                    order_book.last_update_id, order_book.bids, order_book.asks
-                );
-            }
-            _ => (),
-        };
+async fn market_websocket() {
+    // Keep the loop running so we continuously print updates
+    // Use an Arc so we can stop the loop from a spawned task (timeout)
+    let keep_running = Arc::new(AtomicBool::new(true)); // Used to control the event loop
+    // Stop after 300 seconds (5 minutes)
+    let kr_clone = keep_running.clone();
+    tokio::spawn(async move {
+        time::sleep(Duration::from_secs(300)).await;
+        println!("Timeout reached (300s). Stopping WebSocket...");
+        kr_clone.store(false, Ordering::Relaxed);
+    });
 
+    // Listen specifically for BTCUSDT depth updates (high-frequency)
+    // Options:
+    //  - "btcusdt@depth@100ms"    : depth updates every 100ms
+    //  - "btcusdt@depth20@100ms"  : depth top20 every 100ms
+    let depth_stream = String::from("btcusdt@depth@100ms");
+
+    let mut web_socket: WebSockets<'_> = WebSockets::new(|event: WebsocketEvent| {
+        // Only handle depth updates here and print them continuously
+        if let WebsocketEvent::DepthOrderBook(depth) = event {
+            // Print a concise summary of the update: first few bids/asks and update id
+            let bids_preview: Vec<_> = depth.bids.iter().take(5).cloned().collect();
+            let asks_preview: Vec<_> = depth.asks.iter().take(5).cloned().collect();
+            println!(
+                "[BTCUSDT DEPTH] last_update_id: {:#?}, bids (top {:#?}): {:#?}, asks (top {:#?}): {:#?}",
+                depth.final_update_id,
+                bids_preview.len(),
+                bids_preview,
+                asks_preview.len(),
+                asks_preview
+            );
+        }
         Ok(())
     });
 
-    web_socket.connect(&agg_trade).unwrap(); // check error
-    if let Err(e) = web_socket.event_loop(&keep_running) {
+    println!("Connecting to {}...", depth_stream);
+    web_socket.connect(&depth_stream).await.unwrap(); // check error
+
+    println!("Continuously printing BTCUSDT depth updates...");
+    // This will run until you stop the process (Ctrl+C) or disconnect manually
+
+    if let Err(e) = web_socket.event_loop(&*keep_running).await {
         println!("Error: {}", e);
     }
-    web_socket.disconnect().unwrap();
-    println!("disconnected");
+
+    // If we ever reach here, attempt to cleanly disconnect
+    // let _ = web_socket.disconnect();
+    // println!("Disconnected");
 }
 
-fn all_trades_websocket() {
+async fn all_trades_websocket() {
     let keep_running = AtomicBool::new(true); // Used to control the event loop
     let agg_trade = String::from("!ticker@arr");
     let mut web_socket = WebSockets::new(|event: WebsocketEvent| {
@@ -135,15 +217,15 @@ fn all_trades_websocket() {
         Ok(())
     });
 
-    web_socket.connect(&agg_trade).unwrap(); // check error
-    if let Err(e) = web_socket.event_loop(&keep_running) {
+    web_socket.connect(&agg_trade).await.unwrap(); // check error
+    if let Err(e) = web_socket.event_loop(&keep_running).await {
         println!("Error: {}", e);
     }
     web_socket.disconnect().unwrap();
     println!("disconnected");
 }
 
-fn kline_websocket() {
+async fn kline_websocket() {
     let keep_running = AtomicBool::new(true);
     let kline = String::from("ethbtc@kline_1m");
     let mut web_socket = WebSockets::new(|event: WebsocketEvent| {
@@ -157,15 +239,15 @@ fn kline_websocket() {
         Ok(())
     });
 
-    web_socket.connect(&kline).unwrap(); // check error
-    if let Err(e) = web_socket.event_loop(&keep_running) {
+    web_socket.connect(&kline).await.unwrap(); // check error
+    if let Err(e) = web_socket.event_loop(&keep_running).await {
         println!("Error: {}", e);
     }
     web_socket.disconnect().unwrap();
     println!("disconnected");
 }
 
-fn last_price_for_one_symbol() {
+async fn last_price_for_one_symbol() {
     let keep_running = AtomicBool::new(true);
     let agg_trade = String::from("btcusdt@ticker");
     let mut btcusdt: f32 = "0".parse().unwrap();
@@ -185,15 +267,15 @@ fn last_price_for_one_symbol() {
         Ok(())
     });
 
-    web_socket.connect(&agg_trade).unwrap(); // check error
-    if let Err(e) = web_socket.event_loop(&keep_running) {
+    web_socket.connect(&agg_trade).await.unwrap(); // check error
+    if let Err(e) = web_socket.event_loop(&keep_running).await {
         println!("Error: {}", e);
     }
     web_socket.disconnect().unwrap();
     println!("disconnected");
 }
 
-fn multiple_streams() {
+async fn multiple_streams() {
     let endpoints =
         ["ETHBTC", "BNBETH"].map(|symbol| format!("{}@depth@100ms", symbol.to_lowercase()));
 
@@ -206,9 +288,13 @@ fn multiple_streams() {
         Ok(())
     });
 
-    web_socket.connect_multiple_streams(&endpoints).unwrap(); // check error
-    if let Err(e) = web_socket.event_loop(&keep_running) {
+    web_socket
+        .connect_multiple_streams(&endpoints)
+        .await
+        .unwrap(); // check error
+    if let Err(e) = web_socket.event_loop(&keep_running).await {
         println!("Error: {}", e);
     }
+    time::sleep(Duration::from_secs(60)).await;
     web_socket.disconnect().unwrap();
 }

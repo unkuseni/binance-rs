@@ -2,11 +2,12 @@ use std::collections::BTreeMap;
 use binance::api::*;
 use binance::account::*;
 
-fn main() {
-    create_order_with_params()
+#[tokio::main]
+async fn main() {
+    create_order_with_params().await
 }
 
-fn create_order_with_params() {
+async fn create_order_with_params() {
     let api_key: &str = "YOUR_API_KEY";
     let secret_key: &str = "YOUR_SECRET_KEY";
 
@@ -21,17 +22,19 @@ fn create_order_with_params() {
     custom_params.insert("customParam".into(), "customValue".into());
     custom_params.insert("customParam2".into(), "customValue2".into());
 
-    let order = account.custom_order_with_params(
-        "BNBUSDT",
-        0.1,
-        300.0,
-        None,
-        OrderSide::Buy,
-        OrderType::Limit,
-        TimeInForce::GTC,
-        None,
-        custom_params,
-    );
+    let order = account
+        .custom_order_with_params(
+            "BNBUSDT",
+            0.1,
+            300.0,
+            None,
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::GTC,
+            None,
+            custom_params,
+        )
+        .await;
 
     println!("Order response: {:?}", order);
 }

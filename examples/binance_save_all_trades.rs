@@ -6,11 +6,12 @@ use std::sync::atomic::{AtomicBool};
 use binance::websockets::*;
 use binance::model::{DayTickerEvent};
 
-fn main() {
-    save_all_trades_websocket();
+#[tokio::main]
+async fn main() {
+    save_all_trades_websocket().await;
 }
 
-fn save_all_trades_websocket() {
+async fn save_all_trades_websocket() {
     struct WebSocketHandler {
         wrt: Writer<File>,
     }
@@ -47,8 +48,8 @@ fn save_all_trades_websocket() {
         Ok(())
     });
 
-    web_socket.connect(&agg_trade).unwrap(); // check error
-    if let Err(e) = web_socket.event_loop(&keep_running) {
+    web_socket.connect(&agg_trade).await.unwrap(); // check error
+    if let Err(e) = web_socket.event_loop(&keep_running).await {
         println!("Error: {}", e);
     }
 }

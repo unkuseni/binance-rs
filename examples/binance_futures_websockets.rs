@@ -1,11 +1,16 @@
 use binance::futures::websockets::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-fn main() {
-    market_websocket();
+// Note: This example demonstrates the traditional FuturesWebSockets API.
+// For a more modern, channel-based API, see the `FuturesStream` struct in the futures::websockets module
+// and examples/binance_futures_websockets_modern.rs
+
+#[tokio::main]
+async fn main() {
+    market_websocket().await;
 }
 
-fn market_websocket() {
+async fn market_websocket() {
     // Example to show the future market websockets. It will print one event for each
     // endpoint and continue to the next.
 
@@ -78,8 +83,9 @@ fn market_websocket() {
         let mut web_socket: FuturesWebSockets<'_> = FuturesWebSockets::new(callback_fn);
         web_socket
             .connect(&FuturesMarket::USDM, stream_example)
+            .await
             .unwrap();
-        web_socket.event_loop(&keep_running).unwrap();
+        web_socket.event_loop(&keep_running).await.unwrap();
         web_socket.disconnect().unwrap();
     }
 
@@ -91,8 +97,9 @@ fn market_websocket() {
         let mut web_socket: FuturesWebSockets<'_> = FuturesWebSockets::new(callback_fn);
         web_socket
             .connect(&FuturesMarket::COINM, stream_example)
+            .await
             .unwrap();
-        web_socket.event_loop(&keep_running).unwrap();
+        web_socket.event_loop(&keep_running).await.unwrap();
         web_socket.disconnect().unwrap();
     }
 }
