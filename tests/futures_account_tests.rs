@@ -9,9 +9,10 @@ mod tests {
     use float_cmp::*;
     use binance::account::OrderSide;
     use binance::futures::model::Transaction;
+    use tokio::test;
 
     #[test]
-    fn change_initial_leverage() {
+    async fn change_initial_leverage() {
         let mut server = Server::new();
         let mock_change_leverage = server
             .mock("POST", "/fapi/v1/leverage")
@@ -27,7 +28,7 @@ mod tests {
             .set_recv_window(1234);
         let account: FuturesAccount = Binance::new_with_config(None, None, &config);
         let _ = env_logger::try_init();
-        let response = account.change_initial_leverage("LTCUSDT", 2).unwrap();
+        let response = account.change_initial_leverage("LTCUSDT", 2).await.unwrap();
 
         mock_change_leverage.assert();
 
@@ -42,7 +43,7 @@ mod tests {
     }
 
     #[test]
-    fn change_margin_type() {
+    async fn change_margin_type() {
         let mut server = Server::new();
         let mock = server
             .mock("POST", "/fapi/v1/marginType")
@@ -59,13 +60,13 @@ mod tests {
             .set_recv_window(1234);
         let account: FuturesAccount = Binance::new_with_config(None, None, &config);
         let _ = env_logger::try_init();
-        account.change_margin_type("BTCUSDT", true).unwrap();
+        account.change_margin_type("BTCUSDT", true).await.unwrap();
 
         mock.assert();
     }
 
     #[test]
-    fn change_position_margin() {
+    async fn change_position_margin() {
         let mut server = Server::new();
         let mock = server
             .mock("POST", "/fapi/v1/positionMargin")
@@ -84,13 +85,14 @@ mod tests {
         let _ = env_logger::try_init();
         account
             .change_position_margin("BTCUSDT", 100., true)
+            .await
             .unwrap();
 
         mock.assert();
     }
 
     #[test]
-    fn cancel_all_open_orders() {
+    async fn cancel_all_open_orders() {
         let mut server = Server::new();
         let mock = server
             .mock("DELETE", "/fapi/v1/allOpenOrders")
@@ -106,13 +108,13 @@ mod tests {
             .set_recv_window(1234);
         let account: FuturesAccount = Binance::new_with_config(None, None, &config);
         let _ = env_logger::try_init();
-        account.cancel_all_open_orders("BTCUSDT").unwrap();
+        account.cancel_all_open_orders("BTCUSDT").await.unwrap();
 
         mock.assert();
     }
 
     #[test]
-    fn change_position_mode() {
+    async fn change_position_mode() {
         let mut server = Server::new();
         let mock = server
             .mock("POST", "/fapi/v1/positionSide/dual")
@@ -128,13 +130,13 @@ mod tests {
             .set_recv_window(1234);
         let account: FuturesAccount = Binance::new_with_config(None, None, &config);
         let _ = env_logger::try_init();
-        account.change_position_mode(true).unwrap();
+        account.change_position_mode(true).await.unwrap();
 
         mock.assert();
     }
 
     #[test]
-    fn stop_market_close_buy() {
+    async fn stop_market_close_buy() {
         let mut server = Server::new();
         let mock_stop_market_close_sell = server
             .mock("POST", "/fapi/v1/order")
@@ -158,7 +160,10 @@ mod tests {
             .set_recv_window(1234);
         let account: FuturesAccount = Binance::new_with_config(None, None, &config);
         let _ = env_logger::try_init();
-        let transaction: Transaction = account.stop_market_close_buy("SRMUSDT", 10.5).unwrap();
+        let transaction: Transaction = account
+            .stop_market_close_buy("SRMUSDT", 10.5)
+            .await
+            .unwrap();
 
         mock_stop_market_close_sell.assert();
 
@@ -170,7 +175,7 @@ mod tests {
     }
 
     #[test]
-    fn stop_market_close_sell() {
+    async fn stop_market_close_sell() {
         let mut server = Server::new();
         let mock_stop_market_close_sell = server
             .mock("POST", "/fapi/v1/order")
@@ -194,7 +199,10 @@ mod tests {
             .set_recv_window(1234);
         let account: FuturesAccount = Binance::new_with_config(None, None, &config);
         let _ = env_logger::try_init();
-        let transaction: Transaction = account.stop_market_close_sell("SRMUSDT", 7.4).unwrap();
+        let transaction: Transaction = account
+            .stop_market_close_sell("SRMUSDT", 7.4)
+            .await
+            .unwrap();
 
         mock_stop_market_close_sell.assert();
 
@@ -206,7 +214,7 @@ mod tests {
     }
 
     #[test]
-    fn custom_order() {
+    async fn custom_order() {
         let mut server = Server::new();
         let mock_custom_order = server
             .mock("POST", "/fapi/v1/order")
@@ -249,9 +257,8 @@ mod tests {
             price_protect: None,
             new_client_order_id: Some("myId".into()),
             good_till_date: None,
-            
         };
-        let transaction: Transaction = account.custom_order(custom_order).unwrap();
+        let transaction: Transaction = account.custom_order(custom_order).await.unwrap();
 
         mock_custom_order.assert();
 
@@ -263,7 +270,7 @@ mod tests {
     }
 
     #[test]
-    fn get_income() {
+    async fn get_income() {
         let mut server = Server::new();
         let mock = server
             .mock("GET", "/fapi/v1/income")
@@ -288,7 +295,7 @@ mod tests {
             end_time: Some(12345678910),
             limit: Some(10),
         };
-        account.get_income(income_request).unwrap();
+        account.get_income(income_request).await.unwrap();
 
         mock.assert();
     }

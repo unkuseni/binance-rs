@@ -7,9 +7,10 @@ use binance::futures::model::OpenInterestHist;
 mod tests {
     use super::*;
     use mockito::{Server, Matcher};
+    use tokio::test;
 
     #[test]
-    fn open_interest_statistics() {
+  async  fn open_interest_statistics() {
         let mut server = Server::new();
         let mock_open_interest_statistics = server
             .mock("GET", "/futures/data/openInterestHist")
@@ -23,6 +24,7 @@ mod tests {
 
         let open_interest_hists = market
             .open_interest_statistics("BTCUSDT", "5m", 10, None, None)
+            .await
             .unwrap();
         mock_open_interest_statistics.assert();
 
