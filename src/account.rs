@@ -692,7 +692,8 @@ impl Account {
             time_in_force,
             new_client_order_id,
             BTreeMap::new(),
-        ).await
+        )
+        .await
     }
 
     /// Place a custom order
@@ -817,12 +818,14 @@ impl Account {
     }
 
     // Trade history starting from selected date
-    pub async fn trade_history_from<S>(&self, symbol: S, start_time: u64) -> Result<Vec<TradeHistory>>
+    pub async fn trade_history_from<S>(
+        &self, symbol: S, start_time: u64,
+    ) -> Result<Vec<TradeHistory>>
     where
         S: Into<String>,
     {
         if !is_start_time_valid(&start_time) {
-            return bail!("Start time should be less than the current time");
+            bail!("Start time should be less than the current time");
         }
 
         let mut parameters: BTreeMap<String, String> = BTreeMap::new();
@@ -830,7 +833,8 @@ impl Account {
         parameters.insert("startTime".into(), start_time.to_string());
         let request = build_signed_request(parameters, self.recv_window)?;
         self.client
-            .get_signed(API::Spot(Spot::MyTrades), Some(request)).await
+            .get_signed(API::Spot(Spot::MyTrades), Some(request))
+            .await
     }
 
     // Trade history starting from selected time to some time
@@ -841,15 +845,17 @@ impl Account {
         S: Into<String>,
     {
         if end_time <= start_time {
-            return bail!("End time should be greater than start time");
+            bail!("End time should be greater than start time");
         }
         if !is_start_time_valid(&start_time) {
-            return bail!("Start time should be less than the current time");
+            bail!("Start time should be less than the current time");
         }
         self.get_trades(symbol, start_time, end_time).await
     }
 
-    async fn get_trades<S>(&self, symbol: S, start_time: u64, end_time: u64) -> Result<Vec<TradeHistory>>
+    async fn get_trades<S>(
+        &self, symbol: S, start_time: u64, end_time: u64,
+    ) -> Result<Vec<TradeHistory>>
     where
         S: Into<String>,
     {
