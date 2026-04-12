@@ -692,12 +692,12 @@ impl Account {
             time_in_force,
             new_client_order_id,
             BTreeMap::new(),
-        )
+        ).await
     }
 
     /// Place a custom order
     #[allow(clippy::too_many_arguments)]
-    pub fn custom_order_with_params<S, F>(
+    pub async fn custom_order_with_params<S, F>(
         &self, symbol: S, qty: F, price: f64, stop_price: Option<f64>, order_side: OrderSide,
         order_type: OrderType, time_in_force: TimeInForce, new_client_order_id: Option<String>,
         request_params: BTreeMap<String, String>,
@@ -817,7 +817,7 @@ impl Account {
     }
 
     // Trade history starting from selected date
-    pub fn trade_history_from<S>(&self, symbol: S, start_time: u64) -> Result<Vec<TradeHistory>>
+    pub async fn trade_history_from<S>(&self, symbol: S, start_time: u64) -> Result<Vec<TradeHistory>>
     where
         S: Into<String>,
     {
@@ -830,11 +830,11 @@ impl Account {
         parameters.insert("startTime".into(), start_time.to_string());
         let request = build_signed_request(parameters, self.recv_window)?;
         self.client
-            .get_signed(API::Spot(Spot::MyTrades), Some(request))
+            .get_signed(API::Spot(Spot::MyTrades), Some(request)).await
     }
 
     // Trade history starting from selected time to some time
-    pub fn trade_history_from_to<S>(
+    pub async fn trade_history_from_to<S>(
         &self, symbol: S, start_time: u64, end_time: u64,
     ) -> Result<Vec<TradeHistory>>
     where
@@ -846,14 +846,14 @@ impl Account {
         if !is_start_time_valid(&start_time) {
             return bail!("Start time should be less than the current time");
         }
-        self.get_trades(symbol, start_time, end_time)
+        self.get_trades(symbol, start_time, end_time).await
     }
 
-    fn get_trades<S>(&self, symbol: S, start_time: u64, end_time: u64) -> Result<Vec<TradeHistory>>
+    async fn get_trades<S>(&self, symbol: S, start_time: u64, end_time: u64) -> Result<Vec<TradeHistory>>
     where
         S: Into<String>,
     {
-        let mut trades = match self.trade_history_from(symbol, start_time) {
+        let mut trades = match self.trade_history_from(symbol, start_time).await {
             Ok(trades) => trades,
             Err(e) => return Err(e),
         };
