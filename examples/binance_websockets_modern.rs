@@ -8,8 +8,7 @@
 //! 5. Comparison with legacy WebSockets API
 
 use binance::{
-    websockets::{Market, Stream},
-    model::{TradeEvent, DayTickerEvent, DepthOrderBookEvent, KlineEvent},
+    model::{DayTickerEvent, DepthOrderBookEvent, KlineEvent, TradeEvent}, websockets::{Market, Stream}, websockets_old::{WebSockets, WebsocketEvent}
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -329,7 +328,6 @@ async fn example_stream_multiple() {
 
 /// Example 7: Legacy WebSockets API for comparison
 async fn example_legacy_websockets() {
-    use binance::websockets::{WebSockets, WebsocketEvent as LegacyEvent};
 
     let keep_running = Arc::new(AtomicBool::new(true));
     let keep_running_clone = keep_running.clone();
@@ -341,9 +339,9 @@ async fn example_legacy_websockets() {
         keep_running_clone.store(false, Ordering::Relaxed);
     });
 
-    let mut web_socket = WebSockets::new(|event: LegacyEvent| {
+    let mut web_socket = WebSockets::new(|event: WebsocketEvent| {
         match event {
-            LegacyEvent::Trade(trade) => {
+            WebsocketEvent::Trade(trade) => {
                 println!(
                     "[Legacy] Trade: {} @ {} (qty: {})",
                     trade.symbol, trade.price, trade.qty

@@ -1,4 +1,4 @@
-use binance::futures::websockets::*;
+use binance::futures::websockets_old::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 // Note: This example demonstrates the traditional FuturesWebSockets API.

@@ -4,12 +4,13 @@ use crate::model::{
     AccountUpdateEvent, AggrTradesEvent, BalanceUpdateEvent, BookTickerEvent, DayTickerEvent,
     WindowTickerEvent, DepthOrderBookEvent, KlineEvent, OrderBook, OrderTradeEvent, TradeEvent,
 };
+use crate::websockets::Market;
 use url::Url;
 use serde::{Deserialize, Serialize};
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use tokio::sync::mpsc;
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use tokio::net::TcpStream;
+use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 use futures_util::{SinkExt, StreamExt};
 
 enum WebsocketAPI {
@@ -48,21 +49,8 @@ pub enum WebsocketEvent {
 }
 
 pub struct WebSockets<'a> {
-    pub socket: Option<
-        tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-        >,
-    >,
-    handler: Box<dyn FnMut(WebsocketEvent) -> Result<()> + 'a>,
-    command_tx: Option<mpsc::UnboundedSender<WebsocketCommand>>,
-    command_rx: Option<mpsc::UnboundedReceiver<WebsocketCommand>>,
-}
-
-#[derive(Debug)]
-pub enum WebsocketCommand {
-    Subscribe(String),
-    Unsubscribe(String),
-    Disconnect,
+    pub socket: Option<WebSocketStream<MaybeTlsStream<TcpStream>>>,
+    handler: Box<dyn FnMut(WebsocketEvent) -> Result<()> + 'a + Send>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -86,14 +74,11 @@ enum Events {
 impl<'a> WebSockets<'a> {
     pub fn new<Callback>(handler: Callback) -> WebSockets<'a>
     where
-        Callback: FnMut(WebsocketEvent) -> Result<()> + 'a,
+        Callback: FnMut(WebsocketEvent) -> Result<()> + 'a + Send,
     {
-        let (command_tx, command_rx) = mpsc::unbounded_channel();
         WebSockets {
             socket: None,
             handler: Box::new(handler),
-            command_tx: Some(command_tx),
-            command_rx: Some(command_rx),
         }
     }
 
@@ -121,6 +106,26 @@ impl<'a> WebSockets<'a> {
             }
             Err(e) => Err(format!("Error during handshake {}", e).into()),
         }
+    }
+
+         /// Connect to a WebSocket stream with specific market configuration
+    ///
+    /// # Arguments
+    ///
+    /// * `market` - Market type (Spot or SpotTestnet)
+    /// * `subscription` - Stream subscription string
+    pub async fn connect_with_market(&mut self, market: Market, subscription: &str) -> Result<()> {
+        let base_url = market.base_url();
+        let url = if subscription.contains('@') && !subscription.contains('?') {
+            format!("{}/ws/{}", base_url, subscription)
+        } else {
+            if subscription.starts_with("wss://") {
+                subscription.to_string()
+            } else {
+                format!("{}/stream?streams={}", base_url, subscription)
+            }
+        };
+        self.connect_wss(&url).await
     }
 
     pub fn disconnect(&mut self) -> Result<()> {
@@ -168,123 +173,32 @@ impl<'a> WebSockets<'a> {
     }
 
     pub async fn event_loop(&mut self, running: &AtomicBool) -> Result<()> {
-        self.event_loop_with_cancellation(Some(running), None).await
-    }
-
-    pub async fn event_loop_with_cancellation(
-        &mut self, running: Option<&AtomicBool>, mut cancel_rx: Option<mpsc::UnboundedReceiver<()>>,
-    ) -> Result<()> {
-        let mut command_rx = self.command_rx.take().expect("command_rx already taken");
-
-        loop {
-            if let Some(running) = running {
-                if !running.load(Ordering::Relaxed) {
-                    break;
-                }
-            }
-
-            tokio::select! {
-                // Handle WebSocket messages
-                message = async {
-                    if let Some(ref mut socket) = self.socket {
-                        socket.next().await
-                    } else {
-                        None
-                    }
-                } => {
-                    match message {
-                        Some(Ok(message)) => match message {
-                            Message::Text(msg) => {
-                                if let Err(e) = self.handle_msg(&msg) {
-                                    return Err(
-                                        format!("Error on handling stream message: {}", e).into()
-                                    );
-                                }
+        while running.load(Ordering::Relaxed) {
+            if let Some(ref mut socket) = self.socket {
+                match socket.next().await {
+                    Some(Ok(message)) => match message {
+                        Message::Text(msg) => {
+                            if let Err(e) = self.handle_msg(&msg) {
+                                return Err(
+                                    format!("Error on handling stream message: {}", e).into()
+                                );
                             }
-                            Message::Ping(data) => {
-                                if let Some(ref mut socket) = self.socket {
-                                    let _ = socket.send(Message::Pong(data)).await;
-                                }
-                            }
-                            Message::Pong(_) | Message::Binary(_) | Message::Frame(_) => (),
-                            Message::Close(e) => return Err(format!("Disconnected {:?}", e).into()),
-                        },
-                        Some(Err(e)) => return Err(format!("WebSocket error: {}", e).into()),
-                        None => return Err("WebSocket stream ended".into()),
-                    }
-                }
-
-                // Handle commands from command channel
-                command = command_rx.recv() => {
-                    match command {
-                        Some(WebsocketCommand::Disconnect) => {
+                        }
+                        Message::Ping(data) => {
                             if let Some(ref mut socket) = self.socket {
-                                let _ = socket.close(None).await;
+                                let _ = socket.send(Message::Pong(data)).await;
                             }
-                            self.socket = None;
-                            break;
                         }
-                        Some(WebsocketCommand::Subscribe(_stream)) => {
-                            // Note: Binance WebSocket doesn't support dynamic subscription
-                            // This is a placeholder for future implementation
-                        }
-                        Some(WebsocketCommand::Unsubscribe(_stream)) => {
-                            // Note: Binance WebSocket doesn't support dynamic unsubscription
-                            // This is a placeholder for future implementation
-                        }
-                        None => {
-                            // Command channel closed
-                            break;
-                        }
-                    }
+                        Message::Pong(_) | Message::Binary(_) | Message::Frame(_) => (),
+                        Message::Close(e) => return Err(format!("Disconnected {:?}", e).into()),
+                    },
+                    Some(Err(e)) => return Err(format!("WebSocket error: {}", e).into()),
+                    None => return Err("WebSocket stream ended".into()),
                 }
-
-                // Handle cancellation signal
-                _ = async {
-                    if let Some(ref mut cancel_rx) = cancel_rx {
-                        cancel_rx.recv().await
-                    } else {
-                        None
-                    }
-                } => {
-                    // Cancellation signal received
-                    break;
-                }
+            } else {
+                return Err("WebSocket is not connected".into());
             }
         }
-
-        self.command_rx = Some(command_rx);
         Ok(())
-    }
-
-    pub fn get_command_sender(&self) -> Option<mpsc::UnboundedSender<WebsocketCommand>> {
-        self.command_tx.clone()
-    }
-
-    pub fn subscribe(&self, stream: String) -> Result<()> {
-        if let Some(ref tx) = self.command_tx {
-            tx.send(WebsocketCommand::Subscribe(stream))
-                .map_err(|e| format!("Failed to send subscribe command: {}", e).into())
-        } else {
-            Err("Command channel not available".into())
-        }
-    }
-
-    pub fn unsubscribe(&self, stream: String) -> Result<()> {
-        if let Some(ref tx) = self.command_tx {
-            tx.send(WebsocketCommand::Unsubscribe(stream))
-                .map_err(|e| format!("Failed to send unsubscribe command: {}", e).into())
-        } else {
-            Err("Command channel not available".into())
-        }
-    }
-
-    pub fn disconnect_via_command(&self) -> Result<()> {
-        if let Some(ref tx) = self.command_tx {
-            tx.send(WebsocketCommand::Disconnect)
-                .map_err(|e| format!("Failed to send disconnect command: {}", e).into())
-        } else {
-            Err("Command channel not available".into())
-        }
     }
 }

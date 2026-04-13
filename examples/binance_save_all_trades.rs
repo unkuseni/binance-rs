@@ -3,7 +3,7 @@ use std::fs::File;
 use csv::Writer;
 use std::sync::atomic::{AtomicBool};
 
-use binance::websockets::*;
+use binance::websockets_old::*;
 use binance::model::{DayTickerEvent};
 
 #[tokio::main]

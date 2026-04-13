@@ -8,9 +8,9 @@
 //! 5. Comparison with legacy FuturesWebSockets API
 
 use binance::{
-    futures::websockets::{FuturesMarket, FuturesStream},
+    futures::{FuturesMarket, FuturesWebSockets, FuturesWebsocketEvent, websockets::FuturesStream},
     model::{
-        AggrTradesEvent, MarkPriceEvent, LiquidationEvent, ContinuousKlineEvent, DayTickerEvent,
+        AggrTradesEvent, ContinuousKlineEvent, DayTickerEvent, LiquidationEvent, MarkPriceEvent
     },
 };
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -337,8 +337,6 @@ async fn example_futures_stream_user_data_auto() {
 
 /// Example 7: Legacy FuturesWebSockets API for comparison
 async fn example_legacy_futures_websockets() {
-    use binance::futures::websockets::{FuturesWebSockets, FuturesWebsocketEvent as LegacyEvent};
-
     let keep_running = Arc::new(AtomicBool::new(true));
     let keep_running_clone = keep_running.clone();
 
@@ -349,9 +347,9 @@ async fn example_legacy_futures_websockets() {
         keep_running_clone.store(false, Ordering::Relaxed);
     });
 
-    let mut web_socket = FuturesWebSockets::new(|event: LegacyEvent| {
+    let mut web_socket = FuturesWebSockets::new(|event: FuturesWebsocketEvent| {
         match event {
-            LegacyEvent::AggrTrades(trade) => {
+            FuturesWebsocketEvent::AggrTrades(trade) => {
                 println!(
                     "[Legacy] Futures Trade: {} @ {} (qty: {})",
                     trade.symbol, trade.price, trade.qty

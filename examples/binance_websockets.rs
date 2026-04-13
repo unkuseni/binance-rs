@@ -2,7 +2,7 @@
 
 use binance::api::*;
 use binance::userstream::*;
-use binance::websockets::*;
+use binance::websockets_old::*;
 use tokio::time;
 use tokio::sync::mpsc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,72 +15,7 @@ use std::time::Duration;
 
 #[tokio::main]
 async fn main() {
-    // Create an unbounded channel so the websocket callback can send events to the main thread
-    let (tx, mut rx) = mpsc::unbounded_channel::<String>();
-
-    // Shared running flag for both websocket task and main receiver loop
-    let running = Arc::new(AtomicBool::new(true));
-    let running_ws = running.clone();
-
-    // Build the websocket with a callback that forwards events to the main thread via the channel
-    let mut ws = WebSockets::new(move |event| {
-        // Convert the event to a string and send it to the main thread; ignore send errors
-        let text = format!("{:#?}", event);
-        let _ = tx.send(text);
-        Ok(())
-    });
-
-    // Spawn a task to run the websocket (connect + event loop)
-    tokio::spawn(async move {
-        if let Err(e) = ws.connect("btcusdt@aggTrade").await {
-            eprintln!("WebSocket connect error: {}", e);
-            running_ws.store(false, Ordering::Relaxed);
-            return;
-        }
-        if let Err(e) = ws.event_loop(&running_ws).await {
-            eprintln!("WebSocket event loop error: {}", e);
-        }
-        // Attempt clean disconnect
-        let _ = ws.disconnect();
-    });
-
-    // Stop after 10 seconds for this quick test (you can change duration as needed)
-    let running_timeout = running.clone();
-    tokio::spawn(async move {
-        time::sleep(Duration::from_secs(10)).await;
-        running_timeout.store(false, Ordering::Relaxed);
-    });
-
-    // Main thread: receive and print events sent from the websocket callback
-    loop {
-        tokio::select! {
-            // Receive next event sent by the websocket callback
-            maybe = rx.recv() => {
-                match maybe {
-                    Some(msg) => println!("MAIN RECEIVED: {}", msg),
-                    None => {
-                        eprintln!("Channel closed by sender");
-                        break;
-                    }
-                }
-            }
-
-            // Periodically check if we should stop
-            _ = time::sleep(Duration::from_millis(200)) => {
-                if !running.load(Ordering::Relaxed) {
-                    // Drain any remaining messages quickly
-                    while let Ok(Some(msg)) =
-                        tokio::time::timeout(Duration::from_millis(50), rx.recv()).await
-                    {
-                        println!("MAIN RECEIVED (drain): {}", msg);
-                    }
-                    break;
-                }
-            }
-        }
-    }
-
-    eprintln!("✅ Test complete");
+    market_websocket().await;
 }
 
 async fn user_stream() {
@@ -153,14 +88,7 @@ async fn user_stream_websocket() {
 async fn market_websocket() {
     // Keep the loop running so we continuously print updates
     // Use an Arc so we can stop the loop from a spawned task (timeout)
-    let keep_running = Arc::new(AtomicBool::new(true)); // Used to control the event loop
-    // Stop after 300 seconds (5 minutes)
-    let kr_clone = keep_running.clone();
-    tokio::spawn(async move {
-        time::sleep(Duration::from_secs(300)).await;
-        println!("Timeout reached (300s). Stopping WebSocket...");
-        kr_clone.store(false, Ordering::Relaxed);
-    });
+    let keep_running =AtomicBool::new(true); // Used to control the event loop
 
     // Listen specifically for BTCUSDT depth updates (high-frequency)
     // Options:
@@ -172,7 +100,7 @@ async fn market_websocket() {
         // Only handle depth updates here and print them continuously
         if let WebsocketEvent::DepthOrderBook(depth) = event {
             // Print a concise summary of the update: first few bids/asks and update id
-            let bids_preview: Vec<_> = depth.bids.iter().take(5).cloned().collect();
+            let mut bids_preview: Vec<_> = depth.bids.iter().take(5).cloned().collect();
             let asks_preview: Vec<_> = depth.asks.iter().take(5).cloned().collect();
             println!(
                 "[BTCUSDT DEPTH] last_update_id: {:#?}, bids (top {:#?}): {:#?}, asks (top {:#?}): {:#?}",
@@ -192,7 +120,7 @@ async fn market_websocket() {
     println!("Continuously printing BTCUSDT depth updates...");
     // This will run until you stop the process (Ctrl+C) or disconnect manually
 
-    if let Err(e) = web_socket.event_loop(&*keep_running).await {
+    if let Err(e) = web_socket.event_loop(&keep_running).await {
         println!("Error: {}", e);
     }
 

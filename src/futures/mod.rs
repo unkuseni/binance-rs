@@ -3,10 +3,11 @@ pub mod general;
 pub mod market;
 pub mod model;
 pub mod userstream;
-pub mod websockets;
 pub mod websockets_old;
+pub mod websockets;
 
-pub use websockets::{
-    FuturesMarket, FuturesStream, FuturesStreamConfig, FuturesWebsocketCommand,
+
+pub use websockets_old::{
+    FuturesMarket,
     FuturesWebsocketEvent, FuturesWebSockets,
 };
