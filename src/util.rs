@@ -6,11 +6,14 @@ use serde_json::Value;
 
 pub fn build_request(parameters: BTreeMap<String, String>) -> String {
     let mut request = String::new();
-    for (key, value) in parameters {
-        let param = format!("{}={}&", key, value);
-        request.push_str(param.as_ref());
+    for (i, (key, value)) in parameters.iter().enumerate() {
+        if i > 0 {
+            request.push('&');
+        }
+        request.push_str(key);
+        request.push('=');
+        request.push_str(value);
     }
-    request.pop();
     request
 }
 

@@ -516,7 +516,7 @@ impl FuturesAccount {
         &self, _order_count: u64, order_requests: Vec<CustomOrderRequest>,
         request_params: BTreeMap<String, String>,
     ) -> Result<Transaction> {
-        let request = String::from("");
+        let mut batch_orders: Vec<BTreeMap<String, String>> = Vec::new();
         for order_request in order_requests {
             let order = OrderRequest {
                 symbol: order_request.symbol,
@@ -538,14 +538,19 @@ impl FuturesAccount {
                 algo_type: Some(order_request.algo_type),
                 client_algo_id: order_request.client_algo_id,
             };
-            let _order = self.build_order(
+            let order_params = self.build_order(
                 order,
                 Some(request_params.clone()),
                 Some(API::Futures(Futures::AlgoOrder)),
             );
-            // TODO : make a request string for batch orders api
-            // let request = build_signed_request(order, self.recv_window)?;
+            batch_orders.push(order_params);
         }
+        let mut parameters = BTreeMap::new();
+        parameters.insert(
+            "batchOrders".into(),
+            serde_json::to_string(&batch_orders).map_err(|e| e.to_string())?,
+        );
+        let request = build_signed_request(parameters, self.recv_window)?;
         self.client
             .post_signed(API::Futures(Futures::AlgoOrder), request)
             .await

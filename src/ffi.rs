@@ -274,20 +274,18 @@ pub async extern "C" fn batch_orders_rs(
 ) -> *mut c_char {
     unsafe {
         let mut orders = Vec::new();
-        #[warn(unused_variables)]
-        let mut i: usize = 0;
         for k in 0..count {
-            i = k as usize;
-            let symbol = symbols[i];
-            let qty = qtys[i];
-            let price = prices[i];
-            let stop_price = stop_prices[i];
-            let order_side = order_sides[i];
-            let order_type = order_types[i];
-            let time_in_force = time_in_forces[i];
-            let activation_price = activation_prices[i];
-            let callback_rate = callback_rates[i];
-            let close_position = close_positions[i];
+            let idx = k as usize;
+            let symbol = symbols[idx];
+            let qty = qtys[idx];
+            let price = prices[idx];
+            let stop_price = stop_prices[idx];
+            let order_side = order_sides[idx];
+            let order_type = order_types[idx];
+            let time_in_force = time_in_forces[idx];
+            let activation_price = activation_prices[idx];
+            let callback_rate = callback_rates[idx];
+            let close_position = close_positions[idx];
 
             let rs_symbol = CStr::from_ptr(symbol).to_str().unwrap();
 
