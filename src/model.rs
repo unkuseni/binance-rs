@@ -523,16 +523,16 @@ pub struct OrderTradeEvent {
     #[serde(rename = "p")]
     pub price: String,
 
-    #[serde(skip, rename = "P")]
+    #[serde(skip)]
     pub p_ignore: String,
 
-    #[serde(skip, rename = "F")]
+    #[serde(skip)]
     pub f_ignore: String,
 
     #[serde(skip)]
     pub g: i32,
 
-    #[serde(skip, rename = "C")]
+    #[serde(skip)]
     pub c_ignore: Option<String>,
 
     #[serde(rename = "x")]
@@ -559,7 +559,7 @@ pub struct OrderTradeEvent {
     #[serde(rename = "n")]
     pub commission: String,
 
-    #[serde(skip, rename = "N")]
+    #[serde(skip)]
     pub asset_commisioned: Option<String>,
 
     #[serde(rename = "T")]
@@ -568,16 +568,13 @@ pub struct OrderTradeEvent {
     #[serde(rename = "t")]
     pub trade_id: i64,
 
-    #[serde(skip, rename = "I")]
+    #[serde(skip)]
     pub i_ignore: u64,
 
     #[serde(skip)]
     pub w: bool,
 
-    #[serde(rename = "m")]
-    pub is_buyer_maker: bool,
-
-    #[serde(skip, rename = "M")]
+    #[serde(skip)]
     pub m_ignore: bool,
 }
 

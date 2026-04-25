@@ -164,10 +164,17 @@ impl<'a> FuturesWebSockets<'a> {
     }
 
     pub fn handle_msg(&mut self, msg: &str) -> Result<()> {
+        self.handle_msg_depth(msg, 0)
+    }
+
+    fn handle_msg_depth(&mut self, msg: &str, depth: u32) -> Result<()> {
+        if depth > 5 {
+            return Ok(());
+        }
         let value: serde_json::Value = serde_json::from_str(msg)?;
 
         if let Some(data) = value.get("data") {
-            self.handle_msg(&data.to_string())?;
+            self.handle_msg_depth(&data.to_string(), depth + 1)?;
             return Ok(());
         }
 

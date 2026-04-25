@@ -211,7 +211,7 @@ pub enum IncomeType {
     OPTIONS_SETTLE_PROFIT,
     INTERNAL_TRANSFER,
     AUTO_EXCHANGE,
-    DELIVERED_SETTELMENT,
+    DELIVERED_SETTLEMENT,
     COIN_SWAP_DEPOSIT,
     COIN_SWAP_WITHDRAW,
     POSITION_LIMIT_INCREASE_FEE,
@@ -235,7 +235,7 @@ impl Display for IncomeType {
             Self::OPTIONS_SETTLE_PROFIT => write!(f, "OPTIONS_SETTLE_PROFIT"),
             Self::INTERNAL_TRANSFER => write!(f, "INTERNAL_TRANSFER"),
             Self::AUTO_EXCHANGE => write!(f, "AUTO_EXCHANGE"),
-            Self::DELIVERED_SETTELMENT => write!(f, "DELIVERED_SETTELMENT"),
+            Self::DELIVERED_SETTLEMENT => write!(f, "DELIVERED_SETTLEMENT"),
             Self::COIN_SWAP_DEPOSIT => write!(f, "COIN_SWAP_DEPOSIT"),
             Self::COIN_SWAP_WITHDRAW => write!(f, "COIN_SWAP_WITHDRAW"),
             Self::POSITION_LIMIT_INCREASE_FEE => write!(f, "POSITION_LIMIT_INCREASE_FEE"),
@@ -839,7 +839,6 @@ impl FuturesAccount {
         }
 
         let request = build_signed_request(parameters, self.recv_window)?;
-        println!("{}", request);
         self.client
             .get_signed(API::Futures(Futures::Income), Some(request))
             .await

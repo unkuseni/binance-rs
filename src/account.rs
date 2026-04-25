@@ -785,7 +785,6 @@ impl Account {
             .await
     }
 
-    pub fn cancel_order_with_client_id_rs<S>() {}
     /// Place a test cancel order
     ///
     /// This order is sandboxed: it is validated, but not sent to the matching engine.

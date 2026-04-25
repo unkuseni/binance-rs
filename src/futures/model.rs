@@ -279,7 +279,7 @@ pub struct Transaction {
     pub price_rate: Option<f64>,
     pub update_time: u64,
     pub working_type: String,
-    price_protect: bool,
+    pub price_protect: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -317,7 +317,7 @@ pub struct CanceledOrder {
     pub price_rate: Option<f64>,
     pub update_time: u64,
     pub working_type: String,
-    price_protect: bool,
+    pub price_protect: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

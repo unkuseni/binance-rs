@@ -16,12 +16,22 @@ pub struct Client {
     host: String,
     inner_client: reqwest::Client,
     verbose: bool,
+
+    api_key_redacted: String,
 }
 
 impl Client {
     pub fn new(api_key: Option<String>, secret_key: Option<String>, host: String) -> Self {
+        let api_key = api_key.unwrap_or_default();
+        let api_key_redacted = if api_key.len() > 8 {
+            format!("{}...{}", &api_key[..4], &api_key[api_key.len() - 4..])
+        } else if !api_key.is_empty() {
+            "***".into()
+        } else {
+            String::new()
+        };
         Client {
-            api_key: api_key.unwrap_or_default(),
+            api_key,
             secret_key: secret_key.unwrap_or_default(),
             host,
             inner_client: reqwest::Client::builder()
@@ -29,6 +39,7 @@ impl Client {
                 .build()
                 .unwrap(),
             verbose: false,
+            api_key_redacted,
         }
     }
 
@@ -43,11 +54,10 @@ impl Client {
     pub async fn get_signed<T: DeserializeOwned>(
         &self, endpoint: API, request: Option<String>,
     ) -> Result<T> {
-        let url = self.sign_request(endpoint, request);
+        let url = self.sign_request(endpoint, request)?;
         let headers = self.build_headers(true)?;
         if self.verbose {
             println!("Request URL: {}", url);
-            println!("Request Headers: {:?}", headers);
         }
         let client = &self.inner_client;
         let response = client.get(url.as_str()).headers(headers).send().await?;
@@ -58,13 +68,12 @@ impl Client {
     pub async fn post_signed<T: DeserializeOwned>(
         &self, endpoint: API, request: String,
     ) -> Result<T> {
-        let url = self.sign_request(endpoint, Some(request));
+        let url = self.sign_request(endpoint, Some(request))?;
         let client = &self.inner_client;
 
         let headers = self.build_headers(true)?;
         if self.verbose {
             println!("Request URL: {}", url);
-            println!("Request Headers: {:?}", headers);
         }
         let response = client.post(url.as_str()).headers(headers).send().await?;
 
@@ -74,11 +83,10 @@ impl Client {
     pub async fn delete_signed<T: DeserializeOwned>(
         &self, endpoint: API, request: Option<String>,
     ) -> Result<T> {
-        let url = self.sign_request(endpoint, request);
+        let url = self.sign_request(endpoint, request)?;
         let headers = self.build_headers(true)?;
         if self.verbose {
             println!("Request URL: {}", url);
-            println!("Request Headers: {:?}", headers);
         }
         let client = &self.inner_client;
         let response = client.delete(url.as_str()).headers(headers).send().await?;
@@ -127,7 +135,6 @@ impl Client {
         let headers = self.build_headers(true)?;
         if self.verbose {
             println!("Request URL: {}", url);
-            println!("Request Headers: {:?}", headers);
             println!("Request Body: {}", data);
         }
         let response = client
@@ -156,19 +163,20 @@ impl Client {
     }
 
     // Request must be signed
-    fn sign_request(&self, endpoint: API, request: Option<String>) -> String {
+    fn sign_request(&self, endpoint: API, request: Option<String>) -> Result<String> {
+        let mut signed_key = match Hmac::<Sha256>::new_from_slice(self.secret_key.as_bytes()) {
+            Ok(key) => key,
+            Err(_) => bail!("Invalid secret key"),
+        };
         if let Some(request) = request {
-            let mut signed_key =
-                Hmac::<Sha256>::new_from_slice(self.secret_key.as_bytes()).unwrap();
             signed_key.update(request.as_bytes());
             let signature = hex_encode(signed_key.finalize().into_bytes());
             let request_body: String = format!("{}&signature={}", request, signature);
-            format!("{}{}?{}", self.host, String::from(endpoint), request_body)
+            Ok(format!("{}{}?{}", self.host, String::from(endpoint), request_body))
         } else {
-            let signed_key = Hmac::<Sha256>::new_from_slice(self.secret_key.as_bytes()).unwrap();
             let signature = hex_encode(signed_key.finalize().into_bytes());
             let request_body: String = format!("&signature={}", signature);
-            format!("{}{}?{}", self.host, String::from(endpoint), request_body)
+            Ok(format!("{}{}?{}", self.host, String::from(endpoint), request_body))
         }
     }
 
@@ -186,6 +194,10 @@ impl Client {
             HeaderName::from_static("x-mbx-apikey"),
             HeaderValue::from_str(self.api_key.as_str())?,
         );
+
+        if self.verbose {
+            eprintln!("x-mbx-apikey: {}", self.api_key_redacted);
+        }
 
         Ok(custom_headers)
     }

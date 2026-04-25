@@ -34,11 +34,11 @@ pub fn build_signed_request_custom(
 }
 
 pub fn to_i64(v: &Value) -> i64 {
-    v.as_i64().unwrap()
+    v.as_i64().unwrap_or(0)
 }
 
 pub fn to_f64(v: &Value) -> f64 {
-    v.as_str().unwrap().parse().unwrap()
+    v.as_str().and_then(|s| s.parse().ok()).unwrap_or(0.0)
 }
 
 fn get_timestamp(start: SystemTime) -> Result<u64> {
@@ -49,10 +49,10 @@ fn get_timestamp(start: SystemTime) -> Result<u64> {
 pub fn is_start_time_valid(start_time: &u64) -> bool {
     let current_time = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+        .unwrap();
+    let current_time_ms = current_time.as_secs() * 1000 + u64::from(current_time.subsec_nanos()) / 1_000_000;
 
-    if start_time > &current_time {
+    if start_time > &current_time_ms {
         false
     } else {
         true
