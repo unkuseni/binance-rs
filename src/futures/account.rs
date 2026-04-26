@@ -144,6 +144,7 @@ struct OrderRequest {
     pub price_protect: Option<f64>,
     pub new_client_order_id: Option<String>,
     pub good_till_date: Option<u64>,
+    #[allow(dead_code)]
     pub algo_type: Option<AlgoType>,
     pub client_algo_id: Option<String>,
 }
@@ -546,10 +547,7 @@ impl FuturesAccount {
             batch_orders.push(order_params);
         }
         let mut parameters = BTreeMap::new();
-        parameters.insert(
-            "batchOrders".into(),
-            serde_json::to_string(&batch_orders).map_err(|e| e.to_string())?,
-        );
+        parameters.insert("batchOrders".into(), serde_json::to_string(&batch_orders)?);
         let request = build_signed_request(parameters, self.recv_window)?;
         self.client
             .post_signed(API::Futures(Futures::AlgoOrder), request)

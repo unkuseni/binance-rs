@@ -4,9 +4,9 @@ use binance::api::*;
 use binance::userstream::*;
 use binance::websockets_old::*;
 use tokio::time;
-use tokio::sync::mpsc;
+
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+
 use std::time::Duration;
 
 // Note: This example demonstrates the traditional WebSockets API.
@@ -78,7 +78,7 @@ async fn user_stream_websocket() {
             println!("Error: {}", e);
         }
         user_stream.close(&listen_key).await.unwrap();
-        web_socket.disconnect().unwrap();
+        web_socket.disconnect().await.unwrap();
         println!("Userstrem closed and disconnected");
     } else {
         println!("Not able to start an User Stream (Check your API_KEY)");
@@ -88,7 +88,7 @@ async fn user_stream_websocket() {
 async fn market_websocket() {
     // Keep the loop running so we continuously print updates
     // Use an Arc so we can stop the loop from a spawned task (timeout)
-    let keep_running =AtomicBool::new(true); // Used to control the event loop
+    let keep_running = AtomicBool::new(true); // Used to control the event loop
 
     // Listen specifically for BTCUSDT depth updates (high-frequency)
     // Options:
@@ -100,7 +100,7 @@ async fn market_websocket() {
         // Only handle depth updates here and print them continuously
         if let WebsocketEvent::DepthOrderBook(depth) = event {
             // Print a concise summary of the update: first few bids/asks and update id
-            let mut bids_preview: Vec<_> = depth.bids.iter().take(5).cloned().collect();
+            let bids_preview: Vec<_> = depth.bids.iter().take(5).cloned().collect();
             let asks_preview: Vec<_> = depth.asks.iter().take(5).cloned().collect();
             println!(
                 "[BTCUSDT DEPTH] last_update_id: {:#?}, bids (top {:#?}): {:#?}, asks (top {:#?}): {:#?}",
@@ -149,7 +149,7 @@ async fn all_trades_websocket() {
     if let Err(e) = web_socket.event_loop(&keep_running).await {
         println!("Error: {}", e);
     }
-    web_socket.disconnect().unwrap();
+    web_socket.disconnect().await.unwrap();
     println!("disconnected");
 }
 
@@ -171,7 +171,7 @@ async fn kline_websocket() {
     if let Err(e) = web_socket.event_loop(&keep_running).await {
         println!("Error: {}", e);
     }
-    web_socket.disconnect().unwrap();
+    web_socket.disconnect().await.unwrap();
     println!("disconnected");
 }
 
@@ -199,7 +199,7 @@ async fn last_price_for_one_symbol() {
     if let Err(e) = web_socket.event_loop(&keep_running).await {
         println!("Error: {}", e);
     }
-    web_socket.disconnect().unwrap();
+    web_socket.disconnect().await.unwrap();
     println!("disconnected");
 }
 
@@ -224,5 +224,5 @@ async fn multiple_streams() {
         println!("Error: {}", e);
     }
     time::sleep(Duration::from_secs(60)).await;
-    web_socket.disconnect().unwrap();
+    web_socket.disconnect().await.unwrap();
 }

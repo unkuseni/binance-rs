@@ -1,7 +1,6 @@
-use error_chain::bail;
 use hex::encode as hex_encode;
-use hmac::{Hmac, Mac};
-use crate::errors::{BinanceContentError, ErrorKind, Result};
+use hmac::{Hmac, KeyInit, Mac};
+use crate::errors::{BinanceContentError, Error, Result};
 use reqwest::StatusCode;
 use reqwest::Response;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, USER_AGENT, CONTENT_TYPE};
@@ -166,17 +165,27 @@ impl Client {
     fn sign_request(&self, endpoint: API, request: Option<String>) -> Result<String> {
         let mut signed_key = match Hmac::<Sha256>::new_from_slice(self.secret_key.as_bytes()) {
             Ok(key) => key,
-            Err(_) => bail!("Invalid secret key"),
+            Err(_) => return Err(Error::Msg("Invalid secret key".to_string())),
         };
         if let Some(request) = request {
             signed_key.update(request.as_bytes());
             let signature = hex_encode(signed_key.finalize().into_bytes());
             let request_body: String = format!("{}&signature={}", request, signature);
-            Ok(format!("{}{}?{}", self.host, String::from(endpoint), request_body))
+            Ok(format!(
+                "{}{}?{}",
+                self.host,
+                String::from(endpoint),
+                request_body
+            ))
         } else {
             let signature = hex_encode(signed_key.finalize().into_bytes());
             let request_body: String = format!("&signature={}", signature);
-            Ok(format!("{}{}?{}", self.host, String::from(endpoint), request_body))
+            Ok(format!(
+                "{}{}?{}",
+                self.host,
+                String::from(endpoint),
+                request_body
+            ))
         }
     }
 
@@ -218,21 +227,21 @@ impl Client {
                 Ok(json)
             }
             StatusCode::INTERNAL_SERVER_ERROR => {
-                bail!("Internal Server Error");
+                return Err(Error::Msg("Internal Server Error".to_string()));
             }
             StatusCode::SERVICE_UNAVAILABLE => {
-                bail!("Service Unavailable");
+                return Err(Error::Msg("Service Unavailable".to_string()));
             }
             StatusCode::UNAUTHORIZED => {
-                bail!("Unauthorized");
+                return Err(Error::Msg("Unauthorized".to_string()));
             }
             StatusCode::BAD_REQUEST => {
                 let error: BinanceContentError = response.json().await?;
 
-                Err(ErrorKind::BinanceError(error).into())
+                Err(Error::BinanceError(error))
             }
             s => {
-                bail!(format!("Received response: {:?}", s));
+                return Err(Error::Msg(format!("Received response: {:?}", s)));
             }
         }
     }

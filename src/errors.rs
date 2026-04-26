@@ -1,30 +1,46 @@
 use serde::Deserialize;
-use error_chain::error_chain;
+use thiserror::Error;
 
 #[derive(Debug, Deserialize)]
 pub struct BinanceContentError {
-    pub code: i16,
+    pub code: i32,
     pub msg: String,
 }
 
-error_chain! {
-    errors {
-        BinanceError(response: BinanceContentError)
+pub type Result<T> = std::result::Result<T, Error>;
 
-        KlineValueMissingError(index: usize, name: &'static str) {
-            description("invalid Vec for Kline"),
-            display("{} at {} is missing", name, index),
-        }
-     }
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("Binance error: {0:?}")]
+    BinanceError(BinanceContentError),
 
-    foreign_links {
-        ReqError(reqwest::Error);
-        InvalidHeaderError(reqwest::header::InvalidHeaderValue);
-        IoError(std::io::Error);
-        ParseFloatError(std::num::ParseFloatError);
-        UrlParserError(url::ParseError);
-        Json(serde_json::Error);
-        Tungstenite(tokio_tungstenite::tungstenite::Error);
-        TimestampError(std::time::SystemTimeError);
-    }
+    #[error("Kline value missing: {name} at index {index}")]
+    KlineValueMissingError { index: usize, name: &'static str },
+
+    #[error("{0}")]
+    Msg(String),
+
+    #[error("Request error: {0}")]
+    ReqError(#[from] reqwest::Error),
+
+    #[error("Invalid header: {0}")]
+    InvalidHeaderError(#[from] reqwest::header::InvalidHeaderValue),
+
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+
+    #[error("Parse float error: {0}")]
+    ParseFloatError(#[from] std::num::ParseFloatError),
+
+    #[error("URL parse error: {0}")]
+    UrlParserError(#[from] url::ParseError),
+
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+
+    #[error("WebSocket error: {0}")]
+    Tungstenite(#[from] tokio_tungstenite::tungstenite::Error),
+
+    #[error("Timestamp error: {0}")]
+    TimestampError(#[from] std::time::SystemTimeError),
 }

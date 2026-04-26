@@ -1,5 +1,3 @@
-use error_chain::bail;
-
 use crate::util::{build_signed_request, is_start_time_valid, uuid_spot};
 use crate::model::{
     AccountInformation, Balance, Empty, Order, OrderCanceled, TradeHistory, Transaction,
@@ -140,7 +138,7 @@ impl Account {
                         return Ok(balance);
                     }
                 }
-                bail!("Asset not found");
+                return Err(crate::errors::Error::Msg("Asset not found".to_string()));
             }
             Err(e) => Err(e),
         }
@@ -824,7 +822,7 @@ impl Account {
         S: Into<String>,
     {
         if !is_start_time_valid(&start_time) {
-            bail!("Start time should be less than the current time");
+            return Err(crate::errors::Error::Msg("Start time should be less than the current time".to_string()));
         }
 
         let mut parameters: BTreeMap<String, String> = BTreeMap::new();
@@ -844,10 +842,10 @@ impl Account {
         S: Into<String>,
     {
         if end_time <= start_time {
-            bail!("End time should be greater than start time");
+            return Err(crate::errors::Error::Msg("End time should be greater than start time".to_string()));
         }
         if !is_start_time_valid(&start_time) {
-            bail!("Start time should be less than the current time");
+            return Err(crate::errors::Error::Msg("Start time should be less than the current time".to_string()));
         }
         self.get_trades(symbol, start_time, end_time).await
     }

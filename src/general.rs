@@ -1,5 +1,3 @@
-use error_chain::bail;
-
 use crate::model::{Empty, ExchangeInformation, ServerTime, Symbol};
 use crate::client::Client;
 use crate::errors::Result;
@@ -14,7 +12,9 @@ pub struct General {
 impl General {
     // Test connectivity
     pub async fn ping(&self) -> Result<String> {
-        self.client.get::<Empty>(API::Spot(Spot::Ping), None).await?;
+        self.client
+            .get::<Empty>(API::Spot(Spot::Ping), None)
+            .await?;
         Ok("pong".into())
     }
 
@@ -42,7 +42,7 @@ impl General {
                         return Ok(item);
                     }
                 }
-                bail!("Symbol not found")
+                return Err(crate::errors::Error::Msg("Symbol not found".to_string()));
             }
             Err(e) => Err(e),
         }

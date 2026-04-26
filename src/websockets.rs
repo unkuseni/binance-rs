@@ -54,6 +54,12 @@ pub struct Stream {
     config: StreamConfig,
 }
 
+impl Default for Stream {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Stream {
     /// Create a new Stream with default configuration (public streams only)
     pub fn new() -> Self {
@@ -136,6 +142,33 @@ impl Stream {
         ws.event_loop(&running).await
     }
 
+    /// Subscribe to a single stream with a channel-based output.
+    ///
+    /// A generic helper that eliminates ~15 lines of boilerplate per channel method.
+    /// Use this instead of manually calling `ws_subscribe` with a pattern-match closure.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `T` - The data type extracted from the event
+    /// * `M` - A mapper closure: `WebsocketEvent -> Option<T>`
+    async fn subscribe_channel<T, M>(
+        &self, subscription: &str, sender: mpsc::UnboundedSender<T>, mapper: M,
+    ) -> Result<()>
+    where
+        T: Send + 'static,
+        M: Fn(WebsocketEvent) -> Option<T> + Send + 'static,
+    {
+        self.ws_subscribe(subscription, move |event| {
+            if let Some(data) = mapper(event) {
+                sender
+                    .send(data)
+                    .map_err(|e| crate::errors::Error::Msg(format!("Channel send error: {}", e)))?;
+            }
+            Ok(())
+        })
+        .await
+    }
+
     /// Subscribe to order book depth updates with channel output
     ///
     /// # Arguments
@@ -148,16 +181,12 @@ impl Stream {
         &self, symbol: &str, depth: u32, speed: &str, sender: mpsc::UnboundedSender<OrderBook>,
     ) -> Result<()> {
         let subscription = format!("{}@depth{}@{}", symbol.to_lowercase(), depth, speed);
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let WebsocketEvent::OrderBook(book) = event {
-                sender.send(book).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(book)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -172,16 +201,12 @@ impl Stream {
         &self, symbol: &str, sender: mpsc::UnboundedSender<TradeEvent>,
     ) -> Result<()> {
         let subscription = format!("{}@trade", symbol.to_lowercase());
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let WebsocketEvent::Trade(trade) = event {
-                sender.send(trade).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(trade)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -197,16 +222,12 @@ impl Stream {
         &self, symbol: &str, interval: &str, sender: mpsc::UnboundedSender<KlineEvent>,
     ) -> Result<()> {
         let subscription = format!("{}@kline_{}", symbol.to_lowercase(), interval);
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let WebsocketEvent::Kline(kline) = event {
-                sender.send(kline).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(kline)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -221,16 +242,12 @@ impl Stream {
         &self, symbol: &str, sender: mpsc::UnboundedSender<DayTickerEvent>,
     ) -> Result<()> {
         let subscription = format!("{}@ticker", symbol.to_lowercase());
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let WebsocketEvent::DayTicker(ticker) = event {
-                sender.send(ticker).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(ticker)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -245,16 +262,12 @@ impl Stream {
         &self, symbol: &str, sender: mpsc::UnboundedSender<WindowTickerEvent>,
     ) -> Result<()> {
         let subscription = format!("{}@miniTicker", symbol.to_lowercase());
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let WebsocketEvent::WindowTicker(ticker) = event {
-                sender.send(ticker).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(ticker)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -269,16 +282,12 @@ impl Stream {
         &self, symbol: &str, sender: mpsc::UnboundedSender<BookTickerEvent>,
     ) -> Result<()> {
         let subscription = format!("{}@bookTicker", symbol.to_lowercase());
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let WebsocketEvent::BookTicker(ticker) = event {
-                sender.send(ticker).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(ticker)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -292,16 +301,12 @@ impl Stream {
         &self, sender: mpsc::UnboundedSender<Vec<DayTickerEvent>>,
     ) -> Result<()> {
         let subscription = "!ticker@arr";
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(subscription, sender, |event| {
             if let WebsocketEvent::DayTickerAll(tickers) = event {
-                sender.send(tickers).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(tickers)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -315,16 +320,12 @@ impl Stream {
         &self, sender: mpsc::UnboundedSender<Vec<WindowTickerEvent>>,
     ) -> Result<()> {
         let subscription = "!miniTicker@arr";
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(subscription, sender, |event| {
             if let WebsocketEvent::WindowTickerAll(mini_tickers) = event {
-                sender.send(mini_tickers).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(mini_tickers)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -338,16 +339,12 @@ impl Stream {
         &self, sender: mpsc::UnboundedSender<BookTickerEvent>,
     ) -> Result<()> {
         let subscription = "!bookTicker";
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(subscription, sender, |event| {
             if let WebsocketEvent::BookTicker(book_ticker) = event {
-                sender.send(book_ticker).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(book_ticker)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -362,16 +359,12 @@ impl Stream {
         &self, symbol: &str, sender: mpsc::UnboundedSender<AggrTradesEvent>,
     ) -> Result<()> {
         let subscription = format!("{}@aggTrade", symbol.to_lowercase());
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let WebsocketEvent::AggrTrades(agg_trade) = event {
-                sender.send(agg_trade).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(agg_trade)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -386,16 +379,12 @@ impl Stream {
         &self, symbol: &str, sender: mpsc::UnboundedSender<DepthOrderBookEvent>,
     ) -> Result<()> {
         let subscription = format!("{}@depth", symbol.to_lowercase());
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let WebsocketEvent::DepthOrderBook(depth_orderbook) = event {
-                sender.send(depth_orderbook).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(depth_orderbook)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -413,16 +402,12 @@ impl Stream {
         sender: mpsc::UnboundedSender<DepthOrderBookEvent>,
     ) -> Result<()> {
         let subscription = format!("{}@depth{}@{}", symbol.to_lowercase(), levels, speed);
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let WebsocketEvent::DepthOrderBook(depth_orderbook) = event {
-                sender.send(depth_orderbook).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(depth_orderbook)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -441,16 +426,7 @@ impl Stream {
         &self, listen_key: &str, sender: mpsc::UnboundedSender<WebsocketEvent>,
     ) -> Result<()> {
         let subscription = listen_key;
-        self.ws_subscribe(subscription, move |event| {
-            sender.send(event).map_err(|e| {
-                crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                    "Channel send error: {}",
-                    e
-                )))
-            })?;
-            Ok(())
-        })
-        .await
+        self.subscribe_channel(subscription, sender, Some).await
     }
 
     /// Subscribe to user data stream with automatic listen key management
@@ -466,7 +442,7 @@ impl Stream {
         &self, sender: mpsc::UnboundedSender<WebsocketEvent>,
     ) -> Result<()> {
         let client = self.config.client.as_ref().ok_or_else(|| {
-            crate::errors::ErrorKind::Msg("Client required for user data stream".to_string())
+            crate::errors::Error::Msg("Client required for user data stream".to_string())
         })?;
 
         // Start user data stream

@@ -5,12 +5,10 @@ use crate::model::{
     WindowTickerEvent, DepthOrderBookEvent, KlineEvent, OrderBook, OrderTradeEvent, TradeEvent,
 };
 use crate::websockets::Market;
-use url::Url;
 use serde::{Deserialize, Serialize};
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use tokio::net::TcpStream;
-use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::tungstenite::Message;
 use futures_util::{SinkExt, StreamExt};
 
 enum WebsocketAPI {
@@ -49,7 +47,7 @@ pub enum WebsocketEvent {
 }
 
 pub struct WebSockets<'a> {
-    pub socket: Option<WebSocketStream<MaybeTlsStream<TcpStream>>>,
+    pub(crate) ws_client: Option<crate::ws_core::WsClient>,
     handler: Box<dyn FnMut(WebsocketEvent) -> Result<()> + 'a + Send>,
 }
 
@@ -77,7 +75,7 @@ impl<'a> WebSockets<'a> {
         Callback: FnMut(WebsocketEvent) -> Result<()> + 'a + Send,
     {
         WebSockets {
-            socket: None,
+            ws_client: None,
             handler: Box::new(handler),
         }
     }
@@ -98,17 +96,11 @@ impl<'a> WebSockets<'a> {
     }
 
     async fn connect_wss(&mut self, wss: &str) -> Result<()> {
-        let url = Url::parse(wss)?;
-        match connect_async(url).await {
-            Ok((socket, _)) => {
-                self.socket = Some(socket);
-                Ok(())
-            }
-            Err(e) => Err(format!("Error during handshake {}", e).into()),
-        }
+        self.ws_client = Some(crate::ws_core::WsClient::connect(wss).await?);
+        Ok(())
     }
 
-         /// Connect to a WebSocket stream with specific market configuration
+    /// Connect to a WebSocket stream with specific market configuration
     ///
     /// # Arguments
     ///
@@ -128,15 +120,14 @@ impl<'a> WebSockets<'a> {
         self.connect_wss(&url).await
     }
 
-    pub fn disconnect(&mut self) -> Result<()> {
-        if let Some(ref mut _socket) = self.socket {
-            // Note: We need to close the socket properly
-            // In async context, we should use async close
-            // For now, we'll just drop the socket
-            self.socket = None;
-            return Ok(());
+    pub async fn disconnect(&mut self) -> Result<()> {
+        if let Some(mut client) = self.ws_client.take() {
+            client.disconnect().await
+        } else {
+            Err(crate::errors::Error::Msg(
+                "Not able to close the connection".to_string(),
+            ))
         }
-        Err("Not able to close the connection".into())
     }
 
     pub fn test_handle_msg(&mut self, msg: &str) -> Result<()> {
@@ -180,30 +171,40 @@ impl<'a> WebSockets<'a> {
     }
 
     pub async fn event_loop(&mut self, running: &AtomicBool) -> Result<()> {
-        while running.load(Ordering::Relaxed) {
-            if let Some(ref mut socket) = self.socket {
-                match socket.next().await {
-                    Some(Ok(message)) => match message {
-                        Message::Text(msg) => {
-                            if let Err(e) = self.handle_msg(&msg) {
-                                return Err(
-                                    format!("Error on handling stream message: {}", e).into()
-                                );
-                            }
+        while running.load(Ordering::Acquire) {
+            let client = self.ws_client.as_mut().ok_or_else(|| {
+                crate::errors::Error::Msg("WebSocket is not connected".to_string())
+            })?;
+            let socket = client.socket.as_mut().ok_or_else(|| {
+                crate::errors::Error::Msg("WebSocket is not connected".to_string())
+            })?;
+
+            match socket.next().await {
+                Some(Ok(message)) => match message {
+                    Message::Text(msg) => {
+                        if let Err(e) = self.handle_msg(&msg) {
+                            return Err(crate::errors::Error::Msg(format!(
+                                "Error on handling stream message: {}",
+                                e
+                            )));
                         }
-                        Message::Ping(data) => {
-                            if let Some(ref mut socket) = self.socket {
-                                let _ = socket.send(Message::Pong(data)).await;
-                            }
-                        }
-                        Message::Pong(_) | Message::Binary(_) | Message::Frame(_) => (),
-                        Message::Close(e) => return Err(format!("Disconnected {:?}", e).into()),
-                    },
-                    Some(Err(e)) => return Err(format!("WebSocket error: {}", e).into()),
-                    None => return Err("WebSocket stream ended".into()),
+                    }
+                    Message::Ping(data) => {
+                        let _ = socket.send(Message::Pong(data)).await;
+                    }
+                    Message::Pong(_) | Message::Binary(_) | Message::Frame(_) => (),
+                    Message::Close(e) => {
+                        return Err(crate::errors::Error::Msg(format!("Disconnected {:?}", e)))
+                    }
+                },
+                Some(Err(e)) => {
+                    return Err(crate::errors::Error::Msg(format!("WebSocket error: {}", e)))
                 }
-            } else {
-                return Err("WebSocket is not connected".into());
+                None => {
+                    return Err(crate::errors::Error::Msg(
+                        "WebSocket stream ended".to_string(),
+                    ))
+                }
             }
         }
         Ok(())

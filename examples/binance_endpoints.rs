@@ -5,7 +5,7 @@ use binance::general::*;
 use binance::account::*;
 use binance::market::*;
 use binance::model::KlineSummary;
-use binance::errors::ErrorKind as BinanceLibErrorKind;
+use binance::errors::Error as BinanceLibError;
 
 #[tokio::main]
 async fn main() {
@@ -23,6 +23,7 @@ async fn main() {
     //savings();
 }
 
+#[allow(dead_code)]
 async fn general(use_testnet: bool) {
     let general: General = if use_testnet {
         let config = Config::default().set_rest_api_endpoint("https://testnet.binance.vision");
@@ -35,13 +36,13 @@ async fn general(use_testnet: bool) {
     match ping {
         Ok(answer) => println!("{:?}", answer),
         Err(err) => {
-            match err.0 {
-                BinanceLibErrorKind::BinanceError(response) => match response.code {
-                    -1000_i16 => println!("An unknown error occured while processing the request"),
+            match err {
+                BinanceLibError::BinanceError(response) => match response.code {
+                    -1000 => println!("An unknown error occured while processing the request"),
                     _ => println!("Non-catched code {}: {}", response.code, response.msg),
                 },
-                BinanceLibErrorKind::Msg(msg) => println!("Binancelib error msg: {}", msg),
-                _ => println!("Other errors: {}.", err.0),
+                BinanceLibError::Msg(msg) => println!("Binancelib error msg: {}", msg),
+                _ => println!("Other errors: {}.", err),
             };
         }
     }

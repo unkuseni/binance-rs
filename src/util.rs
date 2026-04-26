@@ -1,7 +1,7 @@
 use crate::errors::Result;
 use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
-use error_chain::bail;
+
 use serde_json::Value;
 
 pub fn build_request(parameters: BTreeMap<String, String>) -> String {
@@ -33,7 +33,9 @@ pub fn build_signed_request_custom(
         parameters.insert("timestamp".into(), timestamp.to_string());
         return Ok(build_request(parameters));
     }
-    bail!("Failed to get timestamp")
+    return Err(crate::errors::Error::Msg(
+        "Failed to get timestamp".to_string(),
+    ));
 }
 
 pub fn to_i64(v: &Value) -> i64 {
@@ -50,10 +52,9 @@ fn get_timestamp(start: SystemTime) -> Result<u64> {
 }
 
 pub fn is_start_time_valid(start_time: &u64) -> bool {
-    let current_time = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap();
-    let current_time_ms = current_time.as_secs() * 1000 + u64::from(current_time.subsec_nanos()) / 1_000_000;
+    let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+    let current_time_ms =
+        current_time.as_secs() * 1000 + u64::from(current_time.subsec_nanos()) / 1_000_000;
 
     if start_time > &current_time_ms {
         false

@@ -11,7 +11,7 @@ async fn create_order_with_params() {
     let api_key: &str = "YOUR_API_KEY";
     let secret_key: &str = "YOUR_SECRET_KEY";
 
-    let mut account: Account = Binance::new(Some(api_key.into()), Some(secret_key.into()));
+    let account: Account = Binance::new(Some(api_key.into()), Some(secret_key.into()));
 
     // account.set_verbose(true); // Uncomment to enable verbose logging
 

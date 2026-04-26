@@ -1,5 +1,3 @@
-use error_chain::bail;
-
 use crate::config::{FUTURES_MAINNET, FUTURES_TESTNET};
 use crate::model::Empty;
 use crate::futures::model::{ExchangeInformation, ServerTime, Symbol};
@@ -16,7 +14,9 @@ pub struct FuturesGeneral {
 impl FuturesGeneral {
     // Test connectivity
     pub async fn ping(&self) -> Result<String> {
-        self.client.get::<Empty>(API::Futures(Futures::Ping), None).await?;
+        self.client
+            .get::<Empty>(API::Futures(Futures::Ping), None)
+            .await?;
         Ok("pong".into())
     }
 
@@ -40,7 +40,9 @@ impl FuturesGeneral {
     // Obtain exchange information
     // - Current exchange trading rules and symbol information
     pub async fn exchange_info(&self) -> Result<ExchangeInformation> {
-        self.client.get(API::Futures(Futures::ExchangeInfo), None).await
+        self.client
+            .get(API::Futures(Futures::ExchangeInfo), None)
+            .await
     }
 
     // Get Symbol information
@@ -56,7 +58,7 @@ impl FuturesGeneral {
                         return Ok(item);
                     }
                 }
-                bail!("Symbol not found")
+                return Err(crate::errors::Error::Msg("Symbol not found".to_string()));
             }
             Err(e) => Err(e),
         }

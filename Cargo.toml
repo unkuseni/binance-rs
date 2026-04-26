@@ -21,15 +21,16 @@ path = "src/lib.rs"
 
 [dependencies]
 hex = "0.4"
-hmac = "0.12.1"
-sha2 = "0.10.8"
+hmac = "0.13.0"
+sha2 = "0.11.0"
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = "1.0"
 error-chain = { version = "0.12.4", default-features = false }
-reqwest = { version = "0.11.24", features = ["json"] }
+thiserror = "2"
+reqwest = { version = "0.13.2", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
-tokio-tungstenite = { version = "0.20", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.29.0", features = ["native-tls"] }
 url = "2.5.0"
 clap = "4.5.2"
 uuid = { version = "1.18.0", features = ["v4"] }
@@ -45,7 +46,7 @@ vendored-tls = [
 csv = "1.3.0"
 mockito = "1.4.0"
 env_logger = "0.11.2"
-criterion = "0.5"
+criterion = "0.8.2"
 float-cmp = "0.10.0"
 serde_json = "1.0"
 

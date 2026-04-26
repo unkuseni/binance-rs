@@ -86,7 +86,7 @@ async fn market_websocket() {
             .await
             .unwrap();
         web_socket.event_loop(&keep_running).await.unwrap();
-        web_socket.disconnect().unwrap();
+        web_socket.disconnect().await.unwrap();
     }
 
     // COIN-M futures examples
@@ -100,6 +100,6 @@ async fn market_websocket() {
             .await
             .unwrap();
         web_socket.event_loop(&keep_running).await.unwrap();
-        web_socket.disconnect().unwrap();
+        web_socket.disconnect().await.unwrap();
     }
 }

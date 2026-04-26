@@ -40,6 +40,12 @@ pub struct FuturesStream {
     config: FuturesStreamConfig,
 }
 
+impl Default for FuturesStream {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FuturesStream {
     /// Create a new FuturesStream with default configuration (public streams only)
     pub fn new() -> Self {
@@ -96,6 +102,33 @@ impl FuturesStream {
         ws.event_loop(&running).await
     }
 
+    /// Subscribe to a single stream with a channel-based output.
+    ///
+    /// A generic helper that eliminates boilerplate per channel method.
+    /// Use this instead of manually calling `ws_subscribe` with a pattern-match closure.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `T` - The data type extracted from the event
+    /// * `M` - A mapper closure: `FuturesWebsocketEvent -> Option<T>`
+    async fn subscribe_channel<T, M>(
+        &self, subscription: &str, sender: mpsc::UnboundedSender<T>, mapper: M,
+    ) -> Result<()>
+    where
+        T: Send + 'static,
+        M: Fn(FuturesWebsocketEvent) -> Option<T> + Send + 'static,
+    {
+        self.ws_subscribe(subscription, move |event| {
+            if let Some(data) = mapper(event) {
+                sender
+                    .send(data)
+                    .map_err(|e| crate::errors::Error::Msg(format!("Channel send error: {}", e)))?;
+            }
+            Ok(())
+        })
+        .await
+    }
+
     /// Subscribe to order book depth updates with channel output
     ///
     /// # Arguments
@@ -108,16 +141,12 @@ impl FuturesStream {
         &self, symbol: &str, depth: u32, speed: &str, sender: mpsc::UnboundedSender<OrderBook>,
     ) -> Result<()> {
         let subscription = format!("{}@depth{}@{}", symbol.to_lowercase(), depth, speed);
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let FuturesWebsocketEvent::OrderBook(book) = event {
-                sender.send(book).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(book)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -132,16 +161,12 @@ impl FuturesStream {
         &self, symbol: &str, sender: mpsc::UnboundedSender<TradeEvent>,
     ) -> Result<()> {
         let subscription = format!("{}@trade", symbol.to_lowercase());
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let FuturesWebsocketEvent::Trade(trade) = event {
-                sender.send(trade).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(trade)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -157,16 +182,12 @@ impl FuturesStream {
         &self, symbol: &str, interval: &str, sender: mpsc::UnboundedSender<KlineEvent>,
     ) -> Result<()> {
         let subscription = format!("{}@kline_{}", symbol.to_lowercase(), interval);
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let FuturesWebsocketEvent::Kline(kline) = event {
-                sender.send(kline).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(kline)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -181,16 +202,12 @@ impl FuturesStream {
         &self, symbol: &str, sender: mpsc::UnboundedSender<DayTickerEvent>,
     ) -> Result<()> {
         let subscription = format!("{}@ticker", symbol.to_lowercase());
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let FuturesWebsocketEvent::DayTicker(ticker) = event {
-                sender.send(ticker).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(ticker)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -205,16 +222,12 @@ impl FuturesStream {
         &self, symbol: &str, sender: mpsc::UnboundedSender<MiniTickerEvent>,
     ) -> Result<()> {
         let subscription = format!("{}@miniTicker", symbol.to_lowercase());
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let FuturesWebsocketEvent::MiniTicker(ticker) = event {
-                sender.send(ticker).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(ticker)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -229,16 +242,12 @@ impl FuturesStream {
         &self, symbol: &str, sender: mpsc::UnboundedSender<BookTickerEvent>,
     ) -> Result<()> {
         let subscription = format!("{}@bookTicker", symbol.to_lowercase());
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let FuturesWebsocketEvent::BookTicker(ticker) = event {
-                sender.send(ticker).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(ticker)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -253,16 +262,12 @@ impl FuturesStream {
         &self, symbol: &str, sender: mpsc::UnboundedSender<MarkPriceEvent>,
     ) -> Result<()> {
         let subscription = format!("{}@markPrice", symbol.to_lowercase());
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let FuturesWebsocketEvent::MarkPrice(mark_price) = event {
-                sender.send(mark_price).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(mark_price)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -277,16 +282,12 @@ impl FuturesStream {
         &self, symbol: &str, sender: mpsc::UnboundedSender<LiquidationEvent>,
     ) -> Result<()> {
         let subscription = format!("{}@forceOrder", symbol.to_lowercase());
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let FuturesWebsocketEvent::Liquidation(liquidation) = event {
-                sender.send(liquidation).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(liquidation)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -301,16 +302,12 @@ impl FuturesStream {
         &self, symbol: &str, sender: mpsc::UnboundedSender<AggrTradesEvent>,
     ) -> Result<()> {
         let subscription = format!("{}@aggTrade", symbol.to_lowercase());
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let FuturesWebsocketEvent::AggrTrades(agg_trade) = event {
-                sender.send(agg_trade).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(agg_trade)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -325,16 +322,12 @@ impl FuturesStream {
         &self, pair: &str, sender: mpsc::UnboundedSender<IndexPriceEvent>,
     ) -> Result<()> {
         let subscription = format!("{}@indexPrice", pair.to_lowercase());
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let FuturesWebsocketEvent::IndexPrice(index_price) = event {
-                sender.send(index_price).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(index_price)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -357,16 +350,12 @@ impl FuturesStream {
             contract_type,
             interval
         );
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let FuturesWebsocketEvent::ContinuousKline(continuous_kline) = event {
-                sender.send(continuous_kline).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(continuous_kline)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -382,16 +371,12 @@ impl FuturesStream {
         &self, pair: &str, interval: &str, sender: mpsc::UnboundedSender<IndexKlineEvent>,
     ) -> Result<()> {
         let subscription = format!("{}@indexPriceKline_{}", pair.to_lowercase(), interval);
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let FuturesWebsocketEvent::IndexKline(index_kline) = event {
-                sender.send(index_kline).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(index_kline)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -406,16 +391,12 @@ impl FuturesStream {
         &self, symbol: &str, sender: mpsc::UnboundedSender<DepthOrderBookEvent>,
     ) -> Result<()> {
         let subscription = format!("{}@depth", symbol.to_lowercase());
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let FuturesWebsocketEvent::DepthOrderBook(depth_orderbook) = event {
-                sender.send(depth_orderbook).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(depth_orderbook)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -433,16 +414,12 @@ impl FuturesStream {
         sender: mpsc::UnboundedSender<DepthOrderBookEvent>,
     ) -> Result<()> {
         let subscription = format!("{}@depth{}@{}", symbol.to_lowercase(), levels, speed);
-        self.ws_subscribe(&subscription, move |event| {
+        self.subscribe_channel(&subscription, sender, |event| {
             if let FuturesWebsocketEvent::DepthOrderBook(depth_orderbook) = event {
-                sender.send(depth_orderbook).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(depth_orderbook)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -456,16 +433,12 @@ impl FuturesStream {
         &self, sender: mpsc::UnboundedSender<Vec<MiniTickerEvent>>,
     ) -> Result<()> {
         let subscription = "!miniTicker@arr";
-        self.ws_subscribe(subscription, move |event| {
+        self.subscribe_channel(subscription, sender, |event| {
             if let FuturesWebsocketEvent::MiniTickerAll(mini_tickers) = event {
-                sender.send(mini_tickers).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(mini_tickers)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -479,16 +452,12 @@ impl FuturesStream {
         &self, sender: mpsc::UnboundedSender<Vec<DayTickerEvent>>,
     ) -> Result<()> {
         let subscription = "!ticker@arr";
-        self.ws_subscribe(subscription, move |event| {
+        self.subscribe_channel(subscription, sender, |event| {
             if let FuturesWebsocketEvent::DayTickerAll(tickers) = event {
-                sender.send(tickers).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(tickers)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -502,16 +471,12 @@ impl FuturesStream {
         &self, sender: mpsc::UnboundedSender<BookTickerEvent>,
     ) -> Result<()> {
         let subscription = "!bookTicker";
-        self.ws_subscribe(subscription, move |event| {
+        self.subscribe_channel(subscription, sender, |event| {
             if let FuturesWebsocketEvent::BookTicker(book_ticker) = event {
-                sender.send(book_ticker).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(book_ticker)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -525,16 +490,12 @@ impl FuturesStream {
         &self, sender: mpsc::UnboundedSender<LiquidationEvent>,
     ) -> Result<()> {
         let subscription = "!forceOrder@arr";
-        self.ws_subscribe(subscription, move |event| {
+        self.subscribe_channel(subscription, sender, |event| {
             if let FuturesWebsocketEvent::Liquidation(liquidation) = event {
-                sender.send(liquidation).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(liquidation)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -548,16 +509,12 @@ impl FuturesStream {
         &self, sender: mpsc::UnboundedSender<Vec<MarkPriceEvent>>,
     ) -> Result<()> {
         let subscription = "!markPrice@arr";
-        self.ws_subscribe(subscription, move |event| {
+        self.subscribe_channel(subscription, sender, |event| {
             if let FuturesWebsocketEvent::MarkPriceAll(mark_prices) = event {
-                sender.send(mark_prices).map_err(|e| {
-                    crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                        "Channel send error: {}",
-                        e
-                    )))
-                })?;
+                Some(mark_prices)
+            } else {
+                None
             }
-            Ok(())
         })
         .await
     }
@@ -576,16 +533,7 @@ impl FuturesStream {
         &self, listen_key: &str, sender: mpsc::UnboundedSender<FuturesWebsocketEvent>,
     ) -> Result<()> {
         let subscription = listen_key;
-        self.ws_subscribe(subscription, move |event| {
-            sender.send(event).map_err(|e| {
-                crate::errors::Error::from(crate::errors::ErrorKind::Msg(format!(
-                    "Channel send error: {}",
-                    e
-                )))
-            })?;
-            Ok(())
-        })
-        .await
+        self.subscribe_channel(subscription, sender, Some).await
     }
 
     /// Subscribe to user data stream with automatic listen key management
@@ -601,7 +549,7 @@ impl FuturesStream {
         &self, sender: mpsc::UnboundedSender<FuturesWebsocketEvent>,
     ) -> Result<()> {
         let client = self.config.client.as_ref().ok_or_else(|| {
-            crate::errors::ErrorKind::Msg("Client required for user data stream".to_string())
+            crate::errors::Error::Msg("Client required for user data stream".to_string())
         })?;
 
         // Start user data stream

@@ -18,6 +18,7 @@
 mod client;
 pub mod errors;
 pub mod util;
+pub(crate) mod ws_core;
 
 pub mod model;
 
@@ -30,6 +31,5 @@ pub mod savings;
 pub mod userstream;
 pub mod websockets;
 pub mod websockets_old;
-
 
 pub mod futures;
