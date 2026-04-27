@@ -135,18 +135,13 @@ impl<'a> WebSockets<'a> {
     }
 
     pub fn handle_msg(&mut self, msg: &str) -> Result<()> {
-        self.handle_msg_depth(msg, 0)
+        let value: serde_json::Value = serde_json::from_str(msg)?;
+        self.handle_value(value)
     }
 
-    fn handle_msg_depth(&mut self, msg: &str, depth: u32) -> Result<()> {
-        if depth > 5 {
-            return Ok(());
-        }
-        let value: serde_json::Value = serde_json::from_str(msg)?;
-
+    fn handle_value(&mut self, value: serde_json::Value) -> Result<()> {
         if let Some(data) = value.get("data") {
-            self.handle_msg_depth(&data.to_string(), depth + 1)?;
-            return Ok(());
+            return self.handle_value(data.clone());
         }
 
         if let Ok(events) = serde_json::from_value::<Events>(value) {

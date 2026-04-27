@@ -5,10 +5,19 @@ use crate::model::{
 };
 use crate::client::Client;
 use crate::websockets_old::{WebSockets, WebsocketEvent};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
+use std::sync::atomic::AtomicU64;
+
+use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
+use tokio_tungstenite::tungstenite::Message;
 use std::time::Duration;
+
+/// Atomic counter for generating unique IDs for subscribe/unsubscribe requests.
+static WS_REQ_ID: AtomicU64 = AtomicU64::new(1);
 
 // ============================================
 // New Stream API - Simplified high-level interface for WebSocket subscriptions
@@ -58,6 +67,15 @@ impl Default for Stream {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Commands for dynamic WebSocket subscription management.
+#[derive(Debug, Clone)]
+pub enum StreamCommand {
+    /// Subscribe to a new stream (e.g., "btcusdt@trade")
+    Subscribe(String),
+    /// Unsubscribe from a stream
+    Unsubscribe(String),
 }
 
 impl Stream {
@@ -475,5 +493,171 @@ impl Stream {
         });
 
         self.ws_user_data(&listen_key, sender).await
+    }
+
+    /// Subscribe to streams with dynamic runtime subscription management.
+    ///
+    /// Unlike `ws_subscribe` which subscribes once, this allows adding/removing
+    /// subscriptions at runtime via the command channel **without reconnecting**.
+    /// Uses Binance's native `SUBSCRIBE`/`UNSUBSCRIBE` protocol messages over
+    /// the existing WebSocket connection.
+    ///
+    /// # Arguments
+    ///
+    /// * `initial_streams` - Initial set of stream names to subscribe to
+    /// * `cmd_rx` - Channel receiver for dynamic subscribe/unsubscribe commands
+    /// * `handler` - Callback function to handle events
+    pub async fn ws_subscribe_with_commands<F>(
+        &self, initial_streams: &[String], mut cmd_rx: mpsc::UnboundedReceiver<StreamCommand>,
+        handler: F,
+    ) -> Result<()>
+    where
+        F: FnMut(WebsocketEvent) -> Result<()> + 'static + Send,
+    {
+        let mut active: HashSet<String> = initial_streams.iter().cloned().collect();
+
+        // Wait until we have at least one stream to connect
+        if active.is_empty() {
+            loop {
+                match cmd_rx.recv().await {
+                    Some(StreamCommand::Subscribe(s)) => {
+                        active.insert(s);
+                        break;
+                    }
+                    Some(StreamCommand::Unsubscribe(_)) => continue,
+                    None => return Ok(()),
+                }
+            }
+        }
+
+        // Connect once with the initial stream set
+        let streams: Vec<String> = active.iter().cloned().collect();
+        let mut ws = WebSockets::new(handler);
+        ws.connect_multiple_streams(&streams).await?;
+
+        // Event loop — commands are handled by sending protocol messages
+        // over the existing socket instead of reconnecting.
+        let running = Arc::new(AtomicBool::new(true));
+        let r = running.clone();
+
+        while r.load(Ordering::Acquire) {
+            // Check for commands before polling socket
+            match cmd_rx.try_recv() {
+                Ok(StreamCommand::Subscribe(s)) => {
+                    if !active.contains(&s) {
+                        let id = WS_REQ_ID.fetch_add(1, Ordering::Relaxed);
+                        let msg = serde_json::json!({
+                            "method": "SUBSCRIBE",
+                            "params": [s],
+                            "id": id,
+                        });
+                        let client = ws.ws_client.as_mut().ok_or_else(|| {
+                            crate::errors::Error::Msg("WebSocket is not connected".to_string())
+                        })?;
+                        let socket = client.socket.as_mut().ok_or_else(|| {
+                            crate::errors::Error::Msg("WebSocket is not connected".to_string())
+                        })?;
+                        socket
+                            .send(Message::Text(msg.to_string().into()))
+                            .await
+                            .map_err(|e| {
+                                crate::errors::Error::Msg(format!(
+                                    "Failed to send SUBSCRIBE: {}",
+                                    e
+                                ))
+                            })?;
+                        active.insert(s);
+                    }
+                }
+                Ok(StreamCommand::Unsubscribe(s)) => {
+                    if active.contains(&s) {
+                        let id = WS_REQ_ID.fetch_add(1, Ordering::Relaxed);
+                        let msg = serde_json::json!({
+                            "method": "UNSUBSCRIBE",
+                            "params": [s],
+                            "id": id,
+                        });
+                        let client = ws.ws_client.as_mut().ok_or_else(|| {
+                            crate::errors::Error::Msg("WebSocket is not connected".to_string())
+                        })?;
+                        let socket = client.socket.as_mut().ok_or_else(|| {
+                            crate::errors::Error::Msg("WebSocket is not connected".to_string())
+                        })?;
+                        socket
+                            .send(Message::Text(msg.to_string().into()))
+                            .await
+                            .map_err(|e| {
+                                crate::errors::Error::Msg(format!(
+                                    "Failed to send UNSUBSCRIBE: {}",
+                                    e
+                                ))
+                            })?;
+                        active.remove(&s);
+                    }
+                }
+                Err(mpsc::error::TryRecvError::Empty) => {}
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    // Channel closed, stop the event loop
+                    return Ok(());
+                }
+            }
+
+            // Poll socket with timeout so commands are checked periodically
+            let client = ws.ws_client.as_mut().ok_or_else(|| {
+                crate::errors::Error::Msg("WebSocket is not connected".to_string())
+            })?;
+            let socket = client.socket.as_mut().ok_or_else(|| {
+                crate::errors::Error::Msg("WebSocket is not connected".to_string())
+            })?;
+
+            match tokio::time::timeout(Duration::from_millis(100), socket.next()).await {
+                Ok(Some(Ok(Message::Text(msg)))) => {
+                    // Check if this is a subscription response (has "id" field)
+                    // rather than a data event. Binance sends:
+                    //   {"result": null, "id": 1}            — success
+                    //   {"code": ..., "msg": "...", "id": 1} — error
+                    let value: serde_json::Value = serde_json::from_str(&msg).map_err(|e| {
+                        crate::errors::Error::Msg(format!("JSON parse error: {}", e))
+                    })?;
+                    if value.get("id").and_then(|v| v.as_u64()).is_some() {
+                        // Subscription response — check for errors
+                        if let Some(code) = value.get("code").and_then(|v| v.as_i64()) {
+                            let err_msg = value
+                                .get("msg")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown");
+                            return Err(crate::errors::Error::Msg(format!(
+                                "Subscription error ({}): {}",
+                                code, err_msg
+                            )));
+                        }
+                        // Success response (result: null), continue
+                    } else {
+                        // Regular data event — pass to handler
+                        ws.handle_msg(&msg)?;
+                    }
+                }
+                Ok(Some(Ok(Message::Ping(data)))) => {
+                    socket
+                        .send(Message::Pong(data))
+                        .await
+                        .map_err(|e| crate::errors::Error::Msg(format!("Pong error: {}", e)))?;
+                }
+                Ok(Some(Ok(Message::Close(e)))) => {
+                    return Err(crate::errors::Error::Msg(format!("Disconnected {:?}", e)));
+                }
+                Ok(Some(Err(e))) => {
+                    return Err(crate::errors::Error::Msg(format!("WebSocket error: {}", e)));
+                }
+                Ok(None) => {
+                    return Err(crate::errors::Error::Msg(
+                        "WebSocket stream ended".to_string(),
+                    ));
+                }
+                Err(_) => {} // Timeout, loop back and check commands
+                _ => {}
+            }
+        }
+        Ok(())
     }
 }
