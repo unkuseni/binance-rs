@@ -8,7 +8,9 @@
 //! 5. Comparison with legacy WebSockets API
 
 use binance::{
-    model::{DayTickerEvent, DepthOrderBookEvent, KlineEvent, TradeEvent}, websockets::{Market, Stream}, websockets_old::{WebSockets, WebsocketEvent}
+    model::{DayTickerEvent, DepthOrderBookEvent, KlineEvent, TradeEvent},
+    websockets::{Market, Stream},
+    websockets_old::{WebSockets, WebsocketEvent},
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -24,31 +26,31 @@ async fn main() {
     println!("1. New Stream API - Trades stream:");
     example_stream_trades().await;
 
-    // Example 2: New Stream API - Orderbook
-    println!("\n2. New Stream API - Orderbook stream:");
-    example_stream_orderbook().await;
+    // // Example 2: New Stream API - Orderbook
+    // println!("\n2. New Stream API - Orderbook stream:");
+    // example_stream_orderbook().await;
 
-    // Example 3: New Stream API - Klines
-    println!("\n3. New Stream API - Kline stream:");
-    example_stream_klines().await;
+    // // Example 3: New Stream API - Klines
+    // println!("\n3. New Stream API - Kline stream:");
+    // example_stream_klines().await;
 
-    // Example 4: New Stream API - Ticker
-    println!("\n4. New Stream API - Ticker stream:");
-    example_stream_ticker().await;
+    // // Example 4: New Stream API - Ticker
+    // println!("\n4. New Stream API - Ticker stream:");
+    // example_stream_ticker().await;
 
-    // Example 5: New Stream API - User data with auto keep-alive
-    println!("\n5. New Stream API - User data stream (with auto keep-alive):");
-    example_stream_user_data_auto().await;
+    // // Example 5: New Stream API - User data with auto keep-alive
+    // println!("\n5. New Stream API - User data stream (with auto keep-alive):");
+    // example_stream_user_data_auto().await;
 
-    // Example 6: Multiple streams with new API
-    println!("\n6. New Stream API - Multiple streams:");
-    example_stream_multiple().await;
+    // // Example 6: Multiple streams with new API
+    // println!("\n6. New Stream API - Multiple streams:");
+    // example_stream_multiple().await;
 
-    // Example 7: Comparison with legacy WebSockets API
-    println!("\n7. Legacy WebSockets API (for comparison):");
-    example_legacy_websockets().await;
+    // // Example 7: Comparison with legacy WebSockets API
+    // println!("\n7. Legacy WebSockets API (for comparison):");
+    // example_legacy_websockets().await;
 
-    println!("\n=== All examples completed ===");
+    // println!("\n=== All examples completed ===");
 }
 
 /// Example 1: Using the new Stream API for trades
@@ -328,7 +330,6 @@ async fn example_stream_multiple() {
 
 /// Example 7: Legacy WebSockets API for comparison
 async fn example_legacy_websockets() {
-
     let keep_running = Arc::new(AtomicBool::new(true));
     let keep_running_clone = keep_running.clone();
 

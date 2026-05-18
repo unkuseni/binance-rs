@@ -650,11 +650,15 @@ pub struct TradeEvent {
     #[serde(rename = "q")]
     pub qty: String,
 
-    #[serde(rename = "b")]
-    pub buyer_order_id: u64,
+    /// Not present in the current Binance @trade WebSocket payload.
+    /// Kept as Option for backward compatibility.
+    #[serde(rename = "b", default)]
+    pub buyer_order_id: Option<u64>,
 
-    #[serde(rename = "a")]
-    pub seller_order_id: u64,
+    /// Not present in the current Binance @trade WebSocket payload.
+    /// Kept as Option for backward compatibility.
+    #[serde(rename = "a", default)]
+    pub seller_order_id: Option<u64>,
 
     #[serde(rename = "T")]
     pub trade_order_time: u64,
